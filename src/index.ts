@@ -7,6 +7,8 @@ import { connectDB } from './config/db';
 import enquiryRoutes from './routes/enquiries';
 import authRoutes from './routes/auth';
 import menuRoutes from './routes/menu';
+import galleryRoutes from './routes/gallery';
+import testimonialRoutes from './routes/testimonials';
 
 dotenv.config();
 
@@ -28,6 +30,8 @@ app.use(express.json());
 app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
+app.use('/api/gallery', galleryRoutes);
+app.use('/api/testimonials', testimonialRoutes);
 app.set('trust proxy', 1);
 
 app.get('/api/health', (req, res) => {
