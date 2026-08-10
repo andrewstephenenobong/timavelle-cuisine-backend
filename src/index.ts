@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { connectDB } from './config/db';
 import enquiryRoutes from './routes/enquiries';
 import authRoutes from './routes/auth';
+import menuRoutes from './routes/menu';
 
 dotenv.config();
 
@@ -13,11 +14,20 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://Timavelle-cuisine.vercel.app',
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/menu', menuRoutes);
 app.set('trust proxy', 1);
 
 app.get('/api/health', (req, res) => {
