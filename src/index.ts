@@ -18,6 +18,7 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:5173',
   'https://Timavelle-cuisine.vercel.app',
 ];
 
