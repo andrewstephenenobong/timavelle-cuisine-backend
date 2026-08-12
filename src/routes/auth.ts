@@ -36,4 +36,30 @@ router.get('/me', protect, async (req: AuthRequest, res: Response) => {
   res.json({ admin });
 });
 
+router.put('/change-password', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const admin = await Admin.findById(req.adminId);
+    if (!admin) return res.status(404).json({ error: 'Admin not found.' });
+
+    const isMatch = await admin.comparePassword(currentPassword);
+    if (!isMatch) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    admin.password = newPassword;
+    await admin.save();
+
+    res.json({ message: 'Password updated successfully.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong changing your password.' });
+  }
+});
 export default router;
