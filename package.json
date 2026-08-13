@@ -8,8 +8,9 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
-    "start": "node dist/scripts/seedContent.js && node dist/index.js",
-    "seed:content": "ts-node src/scripts/seedContent.ts"
+    "start": "node dist/index.js & server_pid=$!; node dist/scripts/seedContent.js || true; wait $server_pid",
+    "seed:content": "ts-node src/scripts/seedContent.ts",
+    "seed:content:compiled": "node dist/scripts/seedContent.js"
   },
   "keywords": [],
   "author": "",
