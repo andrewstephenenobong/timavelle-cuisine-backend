@@ -25,6 +25,24 @@ test('enquiry deletion is protected', async () => {
   assert.match(response.body.error, /authorized/i);
 });
 
+test('enquiry archive and restore are protected', async () => {
+  const archiveResponse = await request(app).post('/api/enquiries/507f1f77bcf86cd799439011/archive');
+  assert.equal(archiveResponse.status, 401);
+  assert.match(archiveResponse.body.error, /authorized/i);
+
+  const restoreResponse = await request(app).post('/api/enquiries/507f1f77bcf86cd799439011/restore');
+  assert.equal(restoreResponse.status, 401);
+  assert.match(restoreResponse.body.error, /authorized/i);
+});
+
+test('bulk enquiry actions are protected', async () => {
+  const response = await request(app)
+    .post('/api/enquiries/bulk-action')
+    .send({ action: 'archive', ids: ['507f1f77bcf86cd799439011'] });
+  assert.equal(response.status, 401);
+  assert.match(response.body.error, /authorized/i);
+});
+
 test('forgot password returns a generic anti-enumeration response', async () => {
   const response = await request(app).post('/api/auth/forgot-password').send({ email: 'not-an-admin@example.com' });
   assert.equal(response.status, 202);

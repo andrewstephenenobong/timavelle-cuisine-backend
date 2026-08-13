@@ -10,6 +10,8 @@ export interface IEnquiry extends Document {
   status: 'new' | 'contacted' | 'quoted' | 'won' | 'closed';
   internalNotes: string;
   lastContactedAt?: Date;
+  archivedAt?: Date;
+  archivedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +26,8 @@ const EnquirySchema = new Schema<IEnquiry>({
   status: { type: String, enum: ['new', 'contacted', 'quoted', 'won', 'closed'], default: 'new', index: true },
   internalNotes: { type: String, trim: true, default: '' },
   lastContactedAt: { type: Date },
+  archivedAt: { type: Date, index: true },
+  archivedBy: { type: String, trim: true },
   createdAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
