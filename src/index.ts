@@ -61,6 +61,8 @@ app.get('/api/health', (_req, res) => {
 
 
 
+export { app };
+
 async function startServer() {
   await connectDB();
   app.listen(PORT, () => {
@@ -68,4 +70,4 @@ async function startServer() {
   });
 }
 
-startServer();
+if (require.main === module) startServer();
