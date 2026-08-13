@@ -10,6 +10,9 @@ import menuRoutes from './routes/menu';
 import galleryRoutes from './routes/gallery';
 import testimonialRoutes from './routes/testimonials';
 import uploadRoutes from './routes/upload';
+import serviceRoutes from './routes/services';
+import faqRoutes from './routes/faqs';
+import contactRoutes from './routes/contact';
 
 dotenv.config();
 
@@ -36,6 +39,9 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/testimonials', testimonialRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/faqs', faqRoutes);
+app.use('/api/contact-details', contactRoutes);
 app.set('trust proxy', 1);
 
 app.get('/api/health', (req, res) => {
