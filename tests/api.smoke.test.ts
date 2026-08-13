@@ -25,6 +25,18 @@ test('enquiry deletion is protected', async () => {
   assert.match(response.body.error, /authorized/i);
 });
 
+test('forgot password returns a generic anti-enumeration response', async () => {
+  const response = await request(app).post('/api/auth/forgot-password').send({ email: 'not-an-admin@example.com' });
+  assert.equal(response.status, 202);
+  assert.match(response.body.message, /If an admin account exists/i);
+});
+
+test('reset password rejects invalid token formats', async () => {
+  const response = await request(app).post('/api/auth/reset-password').send({ token: 'invalid-token', newPassword: 'new-password-123' });
+  assert.equal(response.status, 400);
+  assert.match(response.body.error, /invalid or has expired/i);
+});
+
 test('public enquiry validation rejects incomplete submissions', async () => {
   const response = await request(app).post('/api/enquiries').send({ email: 'not-an-enquiry' });
   assert.equal(response.status, 400);

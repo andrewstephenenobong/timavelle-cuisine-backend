@@ -4,12 +4,16 @@ import bcrypt from 'bcryptjs';
 export interface IAdmin extends Document {
   email: string;
   password: string;
+  passwordResetTokenHash?: string;
+  passwordResetTokenExpiresAt?: Date;
   comparePassword(candidate: string): Promise<boolean>;
 }
 
 const AdminSchema = new Schema<IAdmin>({
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
   password: { type: String, required: true },
+  passwordResetTokenHash: { type: String, select: false },
+  passwordResetTokenExpiresAt: { type: Date, select: false },
 });
 
 AdminSchema.pre('save', async function () {
