@@ -7,6 +7,10 @@ test('health exposes the API readiness state', async () => {
   const response = await request(app).get('/api/health');
   assert.ok([200, 503].includes(response.status));
   assert.ok(['ok', 'degraded'].includes(response.body.status));
+  assert.ok(['ready', 'connecting', 'unavailable'].includes(response.body.database));
+  assert.equal(response.headers['cache-control'], 'no-store');
+  assert.equal(typeof response.body.checkedAt, 'string');
+  assert.equal(typeof response.body.uptimeSeconds, 'number');
 });
 
 test('enquiry inbox is protected', async () => {

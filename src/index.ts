@@ -55,8 +55,16 @@ app.use('/api/contact-details', contactRoutes);
 app.set('trust proxy', 1);
 
 app.get('/api/health', (_req, res) => {
-  const databaseReady = mongoose.connection.readyState === 1;
-  res.status(databaseReady ? 200 : 503).json({ status: databaseReady ? 'ok' : 'degraded', database: databaseReady ? 'ready' : 'unavailable', message: 'Timavelle Cuisine API is running' });
+  const databaseState = mongoose.connection.readyState === 1 ? 'ready' : mongoose.connection.readyState === 2 ? 'connecting' : 'unavailable';
+  const databaseReady = databaseState === 'ready';
+  res.set('Cache-Control', 'no-store');
+  res.status(databaseReady ? 200 : 503).json({
+    status: databaseReady ? 'ok' : 'degraded',
+    database: databaseState,
+    uptimeSeconds: Math.round(process.uptime()),
+    checkedAt: new Date().toISOString(),
+    message: databaseReady ? 'Timavelle Cuisine API and database are ready' : 'Timavelle Cuisine API is running while the database reconnects',
+  });
 });
 
 
@@ -64,10 +72,10 @@ app.get('/api/health', (_req, res) => {
 export { app };
 
 async function startServer() {
-  await connectDB();
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+  void connectDB().catch(() => undefined);
 }
 
 if (require.main === module) startServer();
