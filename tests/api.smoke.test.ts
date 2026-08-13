@@ -19,6 +19,12 @@ test('enquiry inbox is protected', async () => {
   assert.match(response.body.error, /authorized/i);
 });
 
+test('enquiry deletion is protected', async () => {
+  const response = await request(app).delete('/api/enquiries/507f1f77bcf86cd799439011');
+  assert.equal(response.status, 401);
+  assert.match(response.body.error, /authorized/i);
+});
+
 test('public enquiry validation rejects incomplete submissions', async () => {
   const response = await request(app).post('/api/enquiries').send({ email: 'not-an-enquiry' });
   assert.equal(response.status, 400);

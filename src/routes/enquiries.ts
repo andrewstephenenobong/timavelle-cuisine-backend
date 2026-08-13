@@ -105,4 +105,16 @@ router.patch('/:id/notes', protect, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.delete('/:id', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid enquiry id.' });
+    const enquiry = await Enquiry.findByIdAndDelete(req.params.id);
+    if (!enquiry) return res.status(404).json({ error: 'Enquiry not found.' });
+    res.json({ message: 'Enquiry deleted', enquiryId: enquiry._id });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong deleting the enquiry.' });
+  }
+});
+
 export default router;
