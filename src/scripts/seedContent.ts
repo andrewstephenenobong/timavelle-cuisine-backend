@@ -7,10 +7,10 @@ import ContactDetail from '../models/ContactDetail';
 dotenv.config();
 
 const services = [
-  { title: 'Private Dining', description: 'An intimate, multi-course experience in your own home.', order: 0 },
-  { title: 'Corporate Events', description: 'Catering shaped around your schedule and the impression you want to leave.', order: 1 },
-  { title: 'Weddings & Celebrations', description: 'Full-service catering for moments that deserve more than a standard buffet.', order: 2 },
-  { title: 'Personal Chef Experience', description: 'Recurring or one-off in-home cooking shaped around your household.', order: 3 },
+  { title: 'Private Dining', description: 'An intimate, multi-course experience in your own home — menu shaped around your table, not a set menu handed to you.', order: 0 },
+  { title: 'Corporate Events', description: 'From working lunches to milestone celebrations, catering built around your schedule and the impression you want to leave.', order: 1 },
+  { title: 'Weddings & Celebrations', description: 'Full-service catering for the moments that deserve more than a standard buffet — tastings, planning, and day-of service included.', order: 2 },
+  { title: 'Personal Chef Experience', description: 'Recurring or one-off in-home cooking, tailored to your household’s tastes, dietary needs, and schedule.', order: 3 },
 ];
 
 const faqs = [
