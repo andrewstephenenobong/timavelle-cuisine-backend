@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import Admin from '../models/Admin';
 import { generateToken } from '../utils/generateToken';
 import { protect, AuthRequest } from '../middleware/auth';
+import { authLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -36,7 +37,7 @@ router.get('/me', protect, async (req: AuthRequest, res: Response) => {
   res.json({ admin });
 });
 
-router.put('/change-password', protect, async (req: AuthRequest, res: Response) => {
+router.put('/change-password', protect, authLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
