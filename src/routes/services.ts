@@ -1,4 +1,5 @@
 import { Request, Response, Router } from 'express';
+import mongoose from 'mongoose';
 import ServiceItem, { IServiceItem } from '../models/ServiceItem';
 import { protect } from '../middleware/auth';
 
@@ -86,6 +87,32 @@ router.delete('/:id', protect, async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong deleting this service draft.' });
+  }
+});
+
+router.post('/publish-batch', protect, async (req: Request, res: Response) => {
+  const ids: string[] = Array.isArray(req.body?.ids) ? Array.from(new Set(req.body.ids.filter((id: unknown): id is string => typeof id === 'string'))) : [];
+  if (!ids.length || ids.some((id) => !mongoose.isValidObjectId(id))) return res.status(400).json({ error: 'A non-empty list of valid service ids is required.' });
+  const session = await mongoose.startSession();
+  try {
+    let publishedItems: IServiceItem[] = [];
+    await session.withTransaction(async () => {
+      const items = await ServiceItem.find({ _id: { $in: ids } }).session(session);
+      if (items.length !== ids.length) throw new Error('One or more service drafts were not found.');
+      const publishedAt = new Date();
+      for (const item of items) {
+        if (!item.title.trim() || !item.description.trim()) throw new Error('Every service draft must have a title and description.');
+        item.published = { title: item.title, description: item.description, order: item.order, publishedAt };
+        await item.save({ session });
+      }
+      publishedItems = items;
+    });
+    res.json({ message: 'Services published atomically', items: publishedItems });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Something went wrong publishing services.' });
+  } finally {
+    await session.endSession();
   }
 });
 
