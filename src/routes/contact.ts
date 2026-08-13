@@ -1,4 +1,5 @@
 import { Request, Response, Router } from 'express';
+import mongoose from 'mongoose';
 import ContactDetail, { IContactDetail } from '../models/ContactDetail';
 import { protect } from '../middleware/auth';
 
@@ -45,17 +46,25 @@ router.put('/:id', protect, async (req: Request, res: Response) => {
 });
 
 router.post('/publish', protect, async (_req: Request, res: Response) => {
+  const session = await mongoose.startSession();
   try {
-    const items = await ContactDetail.find();
-    const publishedAt = new Date();
-    for (const item of items) {
-      item.published = { label: item.label, value: item.value, publishedAt };
-      await item.save();
-    }
+    let items: IContactDetail[] = [];
+    await session.withTransaction(async () => {
+      items = await ContactDetail.find().session(session);
+      if (!items.length) throw new Error('No contact details are available to publish.');
+      const publishedAt = new Date();
+      for (const item of items) {
+        if (!item.label.trim() || !item.value.trim()) throw new Error('Every contact detail must have a label and value.');
+        item.published = { label: item.label, value: item.value, publishedAt };
+        await item.save({ session });
+      }
+    });
     res.json({ message: 'Contact details published', items });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Something went wrong publishing contact details.' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Something went wrong publishing contact details.' });
+  } finally {
+    await session.endSession();
   }
 });
 
