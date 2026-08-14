@@ -66,6 +66,15 @@ test('uploads are protected before multipart processing', async () => {
   assert.equal(response.status, 401);
 });
 
+test('hero image draft and publish endpoints are protected', async () => {
+  const draftResponse = await request(app).get('/api/hero-image/admin');
+  assert.equal(draftResponse.status, 401);
+  const updateResponse = await request(app).put('/api/hero-image').send({ imageUrl: '/images/About/image.png', altText: 'Hero image' });
+  assert.equal(updateResponse.status, 401);
+  const publishResponse = await request(app).post('/api/hero-image/publish');
+  assert.equal(publishResponse.status, 401);
+});
+
 test('public CORS allows the production website origin', async () => {
   const response = await request(app).get('/api/health').set('Origin', 'https://timavelle-cuisine.vercel.app');
   assert.equal(response.headers['access-control-allow-origin'], 'https://timavelle-cuisine.vercel.app');

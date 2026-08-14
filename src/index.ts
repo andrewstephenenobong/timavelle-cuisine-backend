@@ -13,6 +13,7 @@ import uploadRoutes from './routes/upload';
 import serviceRoutes from './routes/services';
 import faqRoutes from './routes/faqs';
 import contactRoutes from './routes/contact';
+import heroImageRoutes from './routes/heroImage';
 import mongoose from 'mongoose';
 
 dotenv.config();
@@ -52,6 +53,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/contact-details', contactRoutes);
+app.use('/api/hero-image', heroImageRoutes);
 app.set('trust proxy', 1);
 
 app.get('/api/health', (_req, res) => {
