@@ -96,6 +96,12 @@ test('content archive and restore endpoints are protected', async () => {
   }
 });
 
+test('menu media library is protected', async () => {
+  const response = await request(app).get('/api/menu/media/library');
+  assert.equal(response.status, 401);
+  assert.match(response.body.error, /authorized/i);
+});
+
 test('gallery bulk archive and restore endpoint is protected', async () => {
   const response = await request(app).post('/api/gallery/bulk-action').send({ action: 'archive', ids: ['507f1f77bcf86cd799439011'] });
   assert.equal(response.status, 401);
