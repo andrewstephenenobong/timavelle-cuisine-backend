@@ -5,6 +5,8 @@ export interface IMenuItem extends Document {
   description: string;
   category: string;
   image?: string;
+  imageFocalX: number;
+  imageFocalY: number;
   featured: boolean;
   archivedAt?: Date;
   archivedBy?: string;
@@ -16,6 +18,8 @@ const MenuItemSchema = new Schema<IMenuItem>({
   description: { type: String, required: true, trim: true },
   category: { type: String, required: true, trim: true },
   image: { type: String, trim: true },
+  imageFocalX: { type: Number, default: 50, min: 0, max: 100 },
+  imageFocalY: { type: Number, default: 50, min: 0, max: 100 },
   featured: { type: Boolean, default: false },
   archivedAt: { type: Date, index: true },
   archivedBy: { type: String, trim: true },
