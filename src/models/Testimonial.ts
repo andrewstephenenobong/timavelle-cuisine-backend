@@ -5,6 +5,8 @@ export interface ITestimonial extends Document {
   quote: string;
   eventType?: string;
   featured: boolean;
+  archivedAt?: Date;
+  archivedBy?: string;
   createdAt: Date;
 }
 
@@ -13,6 +15,8 @@ const TestimonialSchema = new Schema<ITestimonial>({
   quote: { type: String, required: true, trim: true },
   eventType: { type: String, trim: true },
   featured: { type: Boolean, default: false },
+  archivedAt: { type: Date, index: true },
+  archivedBy: { type: String, trim: true },
   createdAt: { type: Date, default: Date.now },
 });
 

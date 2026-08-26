@@ -84,6 +84,18 @@ test('contact detail create and delete endpoints are protected', async () => {
   assert.equal(deleteResponse.status, 401);
 });
 
+test('content archive and restore endpoints are protected', async () => {
+  const id = '507f1f77bcf86cd799439011';
+  for (const endpoint of [
+    `/api/menu/${id}/archive`, `/api/gallery/${id}/restore`, `/api/testimonials/${id}/archive`,
+    `/api/services/${id}/restore`, `/api/faqs/${id}/archive`, `/api/contact-details/${id}/restore`,
+  ]) {
+    const response = await request(app).post(endpoint);
+    assert.equal(response.status, 401);
+    assert.match(response.body.error, /authorized/i);
+  }
+});
+
 test('public CORS allows the production website origin', async () => {
   const response = await request(app).get('/api/health').set('Origin', 'https://timavelle-cuisine.vercel.app');
   assert.equal(response.headers['access-control-allow-origin'], 'https://timavelle-cuisine.vercel.app');

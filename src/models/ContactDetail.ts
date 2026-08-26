@@ -8,7 +8,10 @@ export interface IContactDetail extends Document {
     label: string;
     value: string;
     publishedAt: Date;
+    isArchived?: boolean;
   } | null;
+  archivedAt?: Date;
+  archivedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,7 +24,10 @@ const ContactDetailSchema = new Schema<IContactDetail>({
     label: { type: String, trim: true },
     value: { type: String, trim: true },
     publishedAt: { type: Date },
+    isArchived: { type: Boolean, default: false },
   },
+  archivedAt: { type: Date, index: true },
+  archivedBy: { type: String, trim: true },
 }, { timestamps: true });
 
 export default mongoose.model<IContactDetail>('ContactDetail', ContactDetailSchema);
