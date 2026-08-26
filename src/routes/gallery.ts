@@ -77,7 +77,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     image.archivedAt = new Date();
     image.archivedBy = req.adminId;
     await image.save();
-    await recordContentArchiveEvent({ action: 'archive', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, details: { caption: image.caption || null, category: image.category, imageUrl: image.imageUrl }, actorId: req.adminId });
     res.json({ message: 'Image archived', image });
   } catch (error) {
     console.error(error);
@@ -94,7 +94,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     image.archivedAt = undefined;
     image.archivedBy = undefined;
     await image.save();
-    await recordContentArchiveEvent({ action: 'restore', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, details: { caption: image.caption || null, category: image.category, imageUrl: image.imageUrl }, actorId: req.adminId });
     res.json({ message: 'Image restored', image });
   } catch (error) {
     console.error(error);

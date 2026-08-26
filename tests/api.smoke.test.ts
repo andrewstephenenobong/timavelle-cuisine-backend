@@ -100,6 +100,10 @@ test('content archive audit history is protected', async () => {
   const response = await request(app).get('/api/content-audit');
   assert.equal(response.status, 401);
   assert.match(response.body.error, /authorized/i);
+  const detailResponse = await request(app).get('/api/content-audit/507f1f77bcf86cd799439011');
+  assert.equal(detailResponse.status, 401);
+  const exportResponse = await request(app).get('/api/content-audit/export');
+  assert.equal(exportResponse.status, 401);
 });
 
 test('public CORS allows the production website origin', async () => {

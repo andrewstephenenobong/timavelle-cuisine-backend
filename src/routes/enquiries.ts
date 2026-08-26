@@ -150,7 +150,7 @@ router.post('/bulk-action', protect, async (req: AuthRequest, res: Response) => 
     }
     const matchingEnquiries = await Enquiry.find(filter).select('_id').lean();
     await Enquiry.updateMany(filter, update);
-    await Promise.all(matchingEnquiries.map((enquiry) => recordContentArchiveEvent({ action: action as 'archive' | 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId })));
+    await Promise.all(matchingEnquiries.map((enquiry) => recordContentArchiveEvent({ action: action as 'archive' | 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), details: { privacy: 'Enquiry values are deliberately not copied into audit history.' }, actorId: req.adminId })));
     const affectedCount = matchingEnquiries.length;
     res.json({ message: `Bulk enquiry ${action} complete`, action, requestedCount: ids.length, affectedCount, skippedCount: ids.length - affectedCount });
   } catch (error) {
@@ -168,7 +168,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     enquiry.archivedAt = new Date();
     enquiry.archivedBy = req.adminId;
     await enquiry.save();
-    await recordContentArchiveEvent({ action: 'archive', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), details: { privacy: 'Enquiry values are deliberately not copied into audit history.' }, actorId: req.adminId });
     res.json({ message: 'Enquiry archived', enquiry });
   } catch (error) {
     console.error(error);
@@ -185,7 +185,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     enquiry.archivedAt = undefined;
     enquiry.archivedBy = undefined;
     await enquiry.save();
-    await recordContentArchiveEvent({ action: 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), details: { privacy: 'Enquiry values are deliberately not copied into audit history.' }, actorId: req.adminId });
     res.json({ message: 'Enquiry restored', enquiry });
   } catch (error) {
     console.error(error);
