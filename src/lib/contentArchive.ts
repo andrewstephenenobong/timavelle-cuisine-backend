@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
+import Admin from '../models/Admin';
+import ContentAuditEvent, { ArchiveAuditAction, AuditedContentResource } from '../models/ContentAuditEvent';
 
 export const CONTENT_SCOPES = ['active', 'archived', 'all'] as const;
 export type ContentScope = typeof CONTENT_SCOPES[number];
@@ -23,4 +25,23 @@ export function validContentId(id: string | string[], label: string, res: Respon
   if (typeof id === 'string' && mongoose.isValidObjectId(id)) return true;
   res.status(400).json({ error: `Invalid ${label} id.` });
   return false;
+}
+
+export async function recordContentArchiveEvent({
+  action,
+  resourceType,
+  resourceId,
+  resourceLabel,
+  actorId,
+}: {
+  action: ArchiveAuditAction;
+  resourceType: AuditedContentResource;
+  resourceId: mongoose.Types.ObjectId | string;
+  resourceLabel: string;
+  actorId?: string;
+}) {
+  if (!actorId || !mongoose.isValidObjectId(actorId)) throw new Error('Missing authenticated audit actor.');
+  const actor = await Admin.findById(actorId).select('email').lean();
+  if (!actor) throw new Error('Authenticated audit actor no longer exists.');
+  await ContentAuditEvent.create({ action, resourceType, resourceId, resourceLabel, actorId, actorEmail: actor.email });
 }

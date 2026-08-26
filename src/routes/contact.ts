@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import mongoose from 'mongoose';
 import ContactDetail, { IContactDetail } from '../models/ContactDetail';
 import { AuthRequest, protect } from '../middleware/auth';
-import { archiveScopeFilter, readContentScope, validContentId } from '../lib/contentArchive';
+import { archiveScopeFilter, readContentScope, recordContentArchiveEvent, validContentId } from '../lib/contentArchive';
 
 const router = Router();
 
@@ -75,6 +75,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = new Date();
     item.archivedBy = req.adminId;
     await item.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'contact', resourceId: item._id, resourceLabel: item.label, actorId: req.adminId });
     res.json({ message: 'Contact detail draft archived. Publish to remove it from the public site.', item });
   } catch (error) {
     console.error(error);
@@ -91,6 +92,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = undefined;
     item.archivedBy = undefined;
     await item.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'contact', resourceId: item._id, resourceLabel: item.label, actorId: req.adminId });
     res.json({ message: 'Contact detail draft restored. Publish to return it to the public site.', item });
   } catch (error) {
     console.error(error);

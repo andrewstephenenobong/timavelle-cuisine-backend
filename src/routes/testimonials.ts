@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Testimonial from '../models/Testimonial';
 import { AuthRequest, protect } from '../middleware/auth';
-import { archiveScopeFilter, readContentScope, validContentId } from '../lib/contentArchive';
+import { archiveScopeFilter, readContentScope, recordContentArchiveEvent, validContentId } from '../lib/contentArchive';
 
 const router = Router();
 
@@ -77,6 +77,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     testimonial.archivedAt = new Date();
     testimonial.archivedBy = req.adminId;
     await testimonial.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, actorId: req.adminId });
     res.json({ message: 'Testimonial archived', testimonial });
   } catch (error) {
     console.error(error);
@@ -93,6 +94,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     testimonial.archivedAt = undefined;
     testimonial.archivedBy = undefined;
     await testimonial.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, actorId: req.adminId });
     res.json({ message: 'Testimonial restored', testimonial });
   } catch (error) {
     console.error(error);

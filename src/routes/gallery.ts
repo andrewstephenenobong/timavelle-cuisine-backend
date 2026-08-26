@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import GalleryImage from '../models/GalleryImage';
 import { AuthRequest, protect } from '../middleware/auth';
-import { archiveScopeFilter, readContentScope, validContentId } from '../lib/contentArchive';
+import { archiveScopeFilter, readContentScope, recordContentArchiveEvent, validContentId } from '../lib/contentArchive';
 
 const router = Router();
 
@@ -77,6 +77,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     image.archivedAt = new Date();
     image.archivedBy = req.adminId;
     await image.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, actorId: req.adminId });
     res.json({ message: 'Image archived', image });
   } catch (error) {
     console.error(error);
@@ -93,6 +94,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     image.archivedAt = undefined;
     image.archivedBy = undefined;
     await image.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'gallery', resourceId: image._id, resourceLabel: image.caption?.trim() || image.category, actorId: req.adminId });
     res.json({ message: 'Image restored', image });
   } catch (error) {
     console.error(error);
