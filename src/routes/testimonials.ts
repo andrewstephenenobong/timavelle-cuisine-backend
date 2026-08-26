@@ -77,7 +77,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     testimonial.archivedAt = new Date();
     testimonial.archivedBy = req.adminId;
     await testimonial.save();
-    await recordContentArchiveEvent({ action: 'archive', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, details: { clientName: testimonial.clientName, quote: testimonial.quote, eventType: testimonial.eventType || null, featured: testimonial.featured }, actorId: req.adminId });
     res.json({ message: 'Testimonial archived', testimonial });
   } catch (error) {
     console.error(error);
@@ -94,7 +94,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     testimonial.archivedAt = undefined;
     testimonial.archivedBy = undefined;
     await testimonial.save();
-    await recordContentArchiveEvent({ action: 'restore', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'testimonial', resourceId: testimonial._id, resourceLabel: testimonial.clientName, details: { clientName: testimonial.clientName, quote: testimonial.quote, eventType: testimonial.eventType || null, featured: testimonial.featured }, actorId: req.adminId });
     res.json({ message: 'Testimonial restored', testimonial });
   } catch (error) {
     console.error(error);

@@ -32,16 +32,18 @@ export async function recordContentArchiveEvent({
   resourceType,
   resourceId,
   resourceLabel,
+  details,
   actorId,
 }: {
   action: ArchiveAuditAction;
   resourceType: AuditedContentResource;
   resourceId: mongoose.Types.ObjectId | string;
   resourceLabel: string;
+  details?: Record<string, unknown>;
   actorId?: string;
 }) {
   if (!actorId || !mongoose.isValidObjectId(actorId)) throw new Error('Missing authenticated audit actor.');
   const actor = await Admin.findById(actorId).select('email').lean();
   if (!actor) throw new Error('Authenticated audit actor no longer exists.');
-  await ContentAuditEvent.create({ action, resourceType, resourceId, resourceLabel, actorId, actorEmail: actor.email });
+  await ContentAuditEvent.create({ action, resourceType, resourceId, resourceLabel, details, actorId, actorEmail: actor.email });
 }

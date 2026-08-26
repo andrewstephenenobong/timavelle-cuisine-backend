@@ -93,7 +93,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = new Date();
     item.archivedBy = req.adminId;
     await item.save();
-    await recordContentArchiveEvent({ action: 'archive', resourceType: 'service', resourceId: item._id, resourceLabel: item.title, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'service', resourceId: item._id, resourceLabel: item.title, details: { title: item.title, description: item.description, order: item.order, publicState: item.published ? (item.published.isArchived ? 'archived' : 'published') : 'not-published' }, actorId: req.adminId });
     res.json({ message: 'Service draft archived. Publish to remove it from the public site.', item });
   } catch (error) {
     console.error(error);
@@ -110,7 +110,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = undefined;
     item.archivedBy = undefined;
     await item.save();
-    await recordContentArchiveEvent({ action: 'restore', resourceType: 'service', resourceId: item._id, resourceLabel: item.title, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'service', resourceId: item._id, resourceLabel: item.title, details: { title: item.title, description: item.description, order: item.order, publicState: item.published ? (item.published.isArchived ? 'archived' : 'published') : 'not-published' }, actorId: req.adminId });
     res.json({ message: 'Service draft restored. Publish to return it to the public site.', item });
   } catch (error) {
     console.error(error);

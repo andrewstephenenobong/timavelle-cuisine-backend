@@ -10,6 +10,7 @@ export interface IContentAuditEvent extends Document {
   resourceType: AuditedContentResource;
   resourceId: mongoose.Types.ObjectId;
   resourceLabel: string;
+  details?: Record<string, unknown>;
   actorId: mongoose.Types.ObjectId;
   actorEmail: string;
   createdAt: Date;
@@ -21,6 +22,7 @@ const ContentAuditEventSchema = new Schema<IContentAuditEvent>({
   resourceType: { type: String, enum: auditedContentResources, required: true, immutable: true },
   resourceId: { type: Schema.Types.ObjectId, required: true, immutable: true },
   resourceLabel: { type: String, required: true, trim: true, maxlength: 180, immutable: true },
+  details: { type: Schema.Types.Mixed, immutable: true },
   actorId: { type: Schema.Types.ObjectId, ref: 'Admin', required: true, immutable: true },
   actorEmail: { type: String, required: true, trim: true, lowercase: true, maxlength: 320, immutable: true },
 }, { timestamps: true });
