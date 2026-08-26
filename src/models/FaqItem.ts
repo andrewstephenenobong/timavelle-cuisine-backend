@@ -9,7 +9,10 @@ export interface IFaqItem extends Document {
     answer: string;
     order: number;
     publishedAt: Date;
+    isArchived?: boolean;
   } | null;
+  archivedAt?: Date;
+  archivedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,7 +26,10 @@ const FaqItemSchema = new Schema<IFaqItem>({
     answer: { type: String, trim: true },
     order: { type: Number, min: 0 },
     publishedAt: { type: Date },
+    isArchived: { type: Boolean, default: false },
   },
+  archivedAt: { type: Date, index: true },
+  archivedBy: { type: String, trim: true },
 }, { timestamps: true });
 
 export default mongoose.model<IFaqItem>('FaqItem', FaqItemSchema);
