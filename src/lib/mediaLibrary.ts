@@ -35,11 +35,13 @@ export async function inspectCloudinaryImage(imageUrl: string): Promise<{ qualit
     const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!metadata.width || !metadata.height) throw new Error('The image dimensions are unavailable.');
     const pixels = await sharp(bytes, { limitInputPixels: 40_000_000 }).resize(8, 8, { fit: 'fill' }).removeAlpha().grayscale().raw().toBuffer();
-    const mean = pixels.reduce((total, pixel) => total + pixel, 0) / pixels.length;
-    const fingerprint = [...pixels].map((pixel) => pixel >= mean ? '1' : '0').join('');
+    const sampledPixels = pixels as unknown as Uint8Array;
+    const mean = Array.from(sampledPixels).reduce((total, pixel) => total + pixel, 0) / sampledPixels.length;
+    const fingerprint = [...sampledPixels].map((pixel) => pixel >= mean ? '1' : '0').join('');
     const stats = await sharp(bytes, { limitInputPixels: 40_000_000 }).removeAlpha().grayscale().stats();
     const edges = await sharp(bytes, { limitInputPixels: 40_000_000 }).resize(128, 128, { fit: 'inside', withoutEnlargement: true }).removeAlpha().grayscale().convolve({ width: 3, height: 3, kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0] }).linear(1, 128).raw().toBuffer();
-    const edgeStrength = edges.length ? edges.reduce((total, pixel) => total + Math.abs(pixel - 128), 0) / edges.length : 0;
+    const edgePixels = edges as unknown as Uint8Array;
+    const edgeStrength = edgePixels.length ? Array.from(edgePixels).reduce((total, pixel) => total + Math.abs(pixel - 128), 0) / edgePixels.length : 0;
     const ratio = metadata.width / metadata.height;
     const flags: MediaQualityFlag[] = [];
     if (Math.min(metadata.width, metadata.height) < 600) flags.push('small');
