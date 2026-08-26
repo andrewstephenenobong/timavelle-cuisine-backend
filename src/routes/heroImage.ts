@@ -68,6 +68,17 @@ router.put('/', protect, async (req: Request, res: Response) => {
   }
 });
 
+router.delete('/', protect, async (_req: Request, res: Response) => {
+  try {
+    const item = await HeroImage.findOneAndDelete({ key: HERO_KEY });
+    if (!item) return res.status(404).json({ error: 'No custom hero image draft is available to reset.' });
+    res.json({ message: 'Hero image reset to the website default' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong resetting the hero image.' });
+  }
+});
+
 router.post('/publish', protect, async (_req: Request, res: Response) => {
   const session = await mongoose.startSession();
   try {

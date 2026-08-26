@@ -29,8 +29,26 @@ router.get('/admin', protect, async (_req: Request, res: Response) => {
   }
 });
 
+router.post('/', protect, async (req: Request, res: Response) => {
+  try {
+    const key = typeof req.body.key === 'string' ? req.body.key.trim().toLowerCase() : '';
+    const label = typeof req.body.label === 'string' ? req.body.label.trim() : '';
+    const value = typeof req.body.value === 'string' ? req.body.value.trim() : '';
+    if (!/^[a-z0-9-]{1,64}$/.test(key)) return res.status(400).json({ error: 'Key must use lowercase letters, numbers, and hyphens only.' });
+    if (!label || !value) return res.status(400).json({ error: 'Label and value are required.' });
+    const existing = await ContactDetail.findOne({ key });
+    if (existing) return res.status(409).json({ error: 'A contact detail already uses this key.' });
+    const item = await ContactDetail.create({ key, label, value, published: null });
+    res.status(201).json({ message: 'Contact detail draft created', item });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong creating this contact detail draft.' });
+  }
+});
+
 router.put('/:id', protect, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid contact detail id.' });
     const item = await ContactDetail.findById(req.params.id);
     if (!item) return res.status(404).json({ error: 'Contact detail draft not found.' });
     if (req.body.label !== undefined && !req.body.label?.trim()) return res.status(400).json({ error: 'Label cannot be blank.' });
@@ -42,6 +60,18 @@ router.put('/:id', protect, async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong updating this contact detail draft.' });
+  }
+});
+
+router.delete('/:id', protect, async (req: Request, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid contact detail id.' });
+    const item = await ContactDetail.findByIdAndDelete(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Contact detail draft not found.' });
+    res.json({ message: 'Contact detail draft deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong deleting this contact detail draft.' });
   }
 });
 

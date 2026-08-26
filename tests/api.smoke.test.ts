@@ -71,8 +71,17 @@ test('hero image draft and publish endpoints are protected', async () => {
   assert.equal(draftResponse.status, 401);
   const updateResponse = await request(app).put('/api/hero-image').send({ imageUrl: '/images/About/image.png', altText: 'Hero image' });
   assert.equal(updateResponse.status, 401);
+  const resetResponse = await request(app).delete('/api/hero-image');
+  assert.equal(resetResponse.status, 401);
   const publishResponse = await request(app).post('/api/hero-image/publish');
   assert.equal(publishResponse.status, 401);
+});
+
+test('contact detail create and delete endpoints are protected', async () => {
+  const createResponse = await request(app).post('/api/contact-details').send({ key: 'instagram', label: 'Instagram', value: '@timavellecuisine' });
+  assert.equal(createResponse.status, 401);
+  const deleteResponse = await request(app).delete('/api/contact-details/507f1f77bcf86cd799439011');
+  assert.equal(deleteResponse.status, 401);
 });
 
 test('public CORS allows the production website origin', async () => {
