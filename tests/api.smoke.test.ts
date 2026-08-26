@@ -102,6 +102,16 @@ test('menu media library is protected', async () => {
   assert.match(response.body.error, /authorized/i);
 });
 
+test('menu media metadata, usage, and analysis endpoints are protected', async () => {
+  const id = '507f1f77bcf86cd799439011';
+  const metadataResponse = await request(app).patch(`/api/menu/media/menu/${id}`).send({ tags: ['main course'], favorite: true });
+  assert.equal(metadataResponse.status, 401);
+  const usageResponse = await request(app).post(`/api/menu/media/gallery/${id}/use`);
+  assert.equal(usageResponse.status, 401);
+  const analysisResponse = await request(app).post('/api/menu/media/library/analyze').send({ items: [{ source: 'menu', id }] });
+  assert.equal(analysisResponse.status, 401);
+});
+
 test('gallery bulk archive and restore endpoint is protected', async () => {
   const response = await request(app).post('/api/gallery/bulk-action').send({ action: 'archive', ids: ['507f1f77bcf86cd799439011'] });
   assert.equal(response.status, 401);
