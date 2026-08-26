@@ -3,12 +3,17 @@ import mongoose from 'mongoose';
 import Enquiry from '../models/Enquiry';
 import { AuthRequest, protect } from '../middleware/auth';
 import { enquiryLimiter } from '../middleware/rateLimiter';
+import { recordContentArchiveEvent } from '../lib/contentArchive';
 
 const router = Router();
 export const ENQUIRY_STATUSES = ['new', 'contacted', 'quoted', 'won', 'closed'] as const;
 export const ENQUIRY_SCOPES = ['active', 'archived', 'all'] as const;
 export const ENQUIRY_BULK_ACTIONS = ['archive', 'restore', 'delete'] as const;
 const MAX_BULK_ENQUIRIES = 100;
+
+function enquiryAuditLabel(id: mongoose.Types.ObjectId | string) {
+  return `Enquiry #${String(id).slice(-6)}`;
+}
 
 function parsePage(value: unknown, fallback: number, max: number) {
   const parsed = Number(value ?? fallback);
@@ -143,8 +148,10 @@ router.post('/bulk-action', protect, async (req: AuthRequest, res: Response) => 
       filter.archivedAt = { $exists: true };
       update.$unset = { archivedAt: 1, archivedBy: 1 };
     }
-    const result = await Enquiry.updateMany(filter, update);
-    const affectedCount = result.matchedCount;
+    const matchingEnquiries = await Enquiry.find(filter).select('_id').lean();
+    await Enquiry.updateMany(filter, update);
+    await Promise.all(matchingEnquiries.map((enquiry) => recordContentArchiveEvent({ action: action as 'archive' | 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId })));
+    const affectedCount = matchingEnquiries.length;
     res.json({ message: `Bulk enquiry ${action} complete`, action, requestedCount: ids.length, affectedCount, skippedCount: ids.length - affectedCount });
   } catch (error) {
     console.error(error);
@@ -161,6 +168,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     enquiry.archivedAt = new Date();
     enquiry.archivedBy = req.adminId;
     await enquiry.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId });
     res.json({ message: 'Enquiry archived', enquiry });
   } catch (error) {
     console.error(error);
@@ -177,6 +185,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     enquiry.archivedAt = undefined;
     enquiry.archivedBy = undefined;
     await enquiry.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'enquiry', resourceId: enquiry._id, resourceLabel: enquiryAuditLabel(enquiry._id), actorId: req.adminId });
     res.json({ message: 'Enquiry restored', enquiry });
   } catch (error) {
     console.error(error);

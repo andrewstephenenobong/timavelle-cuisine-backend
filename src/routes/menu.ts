@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import MenuItem from '../models/MenuItem';
 import { AuthRequest, protect } from '../middleware/auth';
-import { archiveScopeFilter, readContentScope, validContentId } from '../lib/contentArchive';
+import { archiveScopeFilter, readContentScope, recordContentArchiveEvent, validContentId } from '../lib/contentArchive';
 
 const router = Router();
 
@@ -77,6 +77,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = new Date();
     item.archivedBy = req.adminId;
     await item.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, actorId: req.adminId });
     res.json({ message: 'Menu item archived', item });
   } catch (error) {
     console.error(error);
@@ -93,6 +94,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = undefined;
     item.archivedBy = undefined;
     await item.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, actorId: req.adminId });
     res.json({ message: 'Menu item restored', item });
   } catch (error) {
     console.error(error);

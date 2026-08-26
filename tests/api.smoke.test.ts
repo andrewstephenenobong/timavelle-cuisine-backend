@@ -96,6 +96,12 @@ test('content archive and restore endpoints are protected', async () => {
   }
 });
 
+test('content archive audit history is protected', async () => {
+  const response = await request(app).get('/api/content-audit');
+  assert.equal(response.status, 401);
+  assert.match(response.body.error, /authorized/i);
+});
+
 test('public CORS allows the production website origin', async () => {
   const response = await request(app).get('/api/health').set('Origin', 'https://timavelle-cuisine.vercel.app');
   assert.equal(response.headers['access-control-allow-origin'], 'https://timavelle-cuisine.vercel.app');
