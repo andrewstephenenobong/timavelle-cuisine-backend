@@ -54,10 +54,14 @@ router.put('/:id', protect, async (req: AuthRequest, res: Response) => {
     if (!validContentId(req.params.id, 'contact detail', res)) return;
     const item = await ContactDetail.findOne({ _id: req.params.id, archivedAt: { $exists: false } });
     if (!item) return res.status(404).json({ error: 'Active contact detail draft not found.' });
-    if (req.body.label !== undefined && !req.body.label?.trim()) return res.status(400).json({ error: 'Label cannot be blank.' });
-    if (req.body.value !== undefined && !req.body.value?.trim()) return res.status(400).json({ error: 'Value cannot be blank.' });
-    item.label = req.body.label ?? item.label;
-    item.value = req.body.value ?? item.value;
+    if (req.body.label !== undefined && typeof req.body.label !== 'string') return res.status(400).json({ error: 'Label must be text.' });
+    if (req.body.value !== undefined && typeof req.body.value !== 'string') return res.status(400).json({ error: 'Value must be text.' });
+    const label = req.body.label === undefined ? item.label : req.body.label.trim();
+    const value = req.body.value === undefined ? item.value : req.body.value.trim();
+    if (!label) return res.status(400).json({ error: 'Label cannot be blank.' });
+    if (!value) return res.status(400).json({ error: 'Value cannot be blank.' });
+    item.label = label;
+    item.value = value;
     await item.save();
     res.json({ message: 'Contact detail draft updated', item });
   } catch (error) {
@@ -131,7 +135,7 @@ router.post('/publish', protect, async (_req: AuthRequest, res: Response) => {
       }
       for (const item of items.filter((item) => Boolean(item.archivedAt) && Boolean(item.published?.value))) {
         if (item.published) {
-          item.published = { label: item.published.label, value: item.published.value, publishedAt, isArchived: true };
+          item.published = { label: item.published.label.trim(), value: item.published.value.trim(), publishedAt, isArchived: true };
           await item.save({ session });
         }
       }
