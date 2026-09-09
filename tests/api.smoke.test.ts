@@ -77,11 +77,22 @@ test('hero image draft and publish endpoints are protected', async () => {
   assert.equal(publishResponse.status, 401);
 });
 
-test('contact detail create and delete endpoints are protected', async () => {
+test('contact detail create, update, publish, and delete endpoints are protected', async () => {
   const createResponse = await request(app).post('/api/contact-details').send({ key: 'instagram', label: 'Instagram', value: '@timavellecuisine' });
   assert.equal(createResponse.status, 401);
+  const updateResponse = await request(app).put('/api/contact-details/507f1f77bcf86cd799439011').send({ value: '+234 811 222 3344' });
+  assert.equal(updateResponse.status, 401);
+  const publishResponse = await request(app).post('/api/contact-details/publish');
+  assert.equal(publishResponse.status, 401);
   const deleteResponse = await request(app).delete('/api/contact-details/507f1f77bcf86cd799439011');
   assert.equal(deleteResponse.status, 401);
+});
+
+test('gallery create and update endpoints are protected', async () => {
+  const createResponse = await request(app).post('/api/gallery').send({ imageUrl: 'https://res.cloudinary.com/example/image.jpg', category: 'Plated' });
+  assert.equal(createResponse.status, 401);
+  const updateResponse = await request(app).put('/api/gallery/507f1f77bcf86cd799439011').send({ imageUrl: 'https://res.cloudinary.com/example/image.jpg', category: 'Plated' });
+  assert.equal(updateResponse.status, 401);
 });
 
 test('content archive and restore endpoints are protected', async () => {
