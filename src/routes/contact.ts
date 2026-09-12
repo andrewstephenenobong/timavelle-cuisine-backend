@@ -60,10 +60,12 @@ router.put('/:id', protect, async (req: AuthRequest, res: Response) => {
     const value = req.body.value === undefined ? item.value : req.body.value.trim();
     if (!label) return res.status(400).json({ error: 'Label cannot be blank.' });
     if (!value) return res.status(400).json({ error: 'Value cannot be blank.' });
+    item.key = item.key.trim().toLowerCase();
     item.label = label;
     item.value = value;
     await item.save();
-    res.json({ message: 'Contact detail draft updated', item });
+    const refreshed = await ContactDetail.findById(item._id);
+    res.json({ message: 'Contact detail draft updated', item: refreshed || item });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong updating this contact detail draft.' });
@@ -140,7 +142,8 @@ router.post('/publish', protect, async (_req: AuthRequest, res: Response) => {
         }
       }
     });
-    res.json({ message: 'Contact details published', items });
+    const publishedItems = await ContactDetail.find().sort({ key: 1 });
+    res.json({ message: 'Contact details published', items: publishedItems });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Something went wrong publishing contact details.' });
