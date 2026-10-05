@@ -14,6 +14,7 @@ import serviceRoutes from './routes/services';
 import faqRoutes from './routes/faqs';
 import contactRoutes from './routes/contact';
 import heroImageRoutes from './routes/heroImage';
+import aboutImageRoutes from './routes/aboutImage';
 import contentAuditRoutes from './routes/contentAudit';
 import mongoose from 'mongoose';
 
@@ -55,6 +56,7 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/contact-details', contactRoutes);
 app.use('/api/hero-image', heroImageRoutes);
+app.use('/api/about-image', aboutImageRoutes);
 app.use('/api/content-audit', contentAuditRoutes);
 app.set('trust proxy', 1);
 
