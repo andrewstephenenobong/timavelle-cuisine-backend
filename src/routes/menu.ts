@@ -23,6 +23,26 @@ function readImageAspectRatio(body: Record<string, unknown>) {
   return { provided, valid: (MENU_IMAGE_ASPECT_RATIOS as readonly string[]).includes(imageAspectRatio), imageAspectRatio: imageAspectRatio as MenuImageAspectRatio };
 }
 
+
+function readPrice(body: Record<string, unknown>) {
+  const price = Number(body.price);
+  return { valid: Number.isFinite(price) && price >= 0, price };
+}
+
+function readAddOns(body: Record<string, unknown>) {
+  if (body.addOns === undefined) return { valid: true, addOns: [] as { name: string; price: number }[] };
+  if (!Array.isArray(body.addOns) || body.addOns.length > 20) return { valid: false, addOns: [] };
+  const addOns: { name: string; price: number }[] = [];
+  for (const entry of body.addOns) {
+    if (!entry || typeof entry !== 'object') return { valid: false, addOns: [] };
+    const name = typeof (entry as Record<string, unknown>).name === 'string' ? (entry as Record<string, unknown>).name as string : '';
+    const price = Number((entry as Record<string, unknown>).price);
+    if (!name.trim() || !Number.isFinite(price) || price < 0) return { valid: false, addOns: [] };
+    addOns.push({ name: name.trim(), price });
+  }
+  return { valid: true, addOns };
+}
+
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const items = await MenuItem.find({ archivedAt: { $exists: false } }).sort({ createdAt: -1 });
@@ -156,10 +176,13 @@ router.post('/', protect, async (req: AuthRequest, res: Response) => {
   try {
     const { name, description, category, image, featured } = req.body;
     const focal = readImageFocalPoint(req.body); const aspect = readImageAspectRatio(req.body);
+    const price = readPrice(req.body); const addOns = readAddOns(req.body);
     if (!name || !description || !category) return res.status(400).json({ error: 'Name, description, and category are required.' });
     if (!focal.valid) return res.status(400).json({ error: 'Image focal point must be between 0 and 100.' });
     if (!aspect.valid) return res.status(400).json({ error: 'A valid Menu image aspect ratio is required.' });
-    const item = await MenuItem.create({ name, description, category, image, featured, imageFocalX: focal.imageFocalX, imageFocalY: focal.imageFocalY, imageAspectRatio: aspect.imageAspectRatio });
+    if (!price.valid) return res.status(400).json({ error: 'Price is required and must be zero or greater.' });
+    if (!addOns.valid) return res.status(400).json({ error: 'Each add-on needs a name and a price of zero or greater (up to 20 add-ons).' });
+    const item = await MenuItem.create({ name, description, category, image, featured, price: price.price, addOns: addOns.addOns, imageFocalX: focal.imageFocalX, imageFocalY: focal.imageFocalY, imageAspectRatio: aspect.imageAspectRatio });
     res.status(201).json({ message: 'Menu item created', item });
   } catch (error) {
     console.error(error);
@@ -172,9 +195,12 @@ router.put('/:id', protect, async (req: AuthRequest, res: Response) => {
     if (!validContentId(req.params.id, 'menu item', res)) return;
     const { name, description, category, image, featured } = req.body;
     const focal = readImageFocalPoint(req.body); const aspect = readImageAspectRatio(req.body);
+    const price = readPrice(req.body); const addOns = readAddOns(req.body);
     if (!focal.valid) return res.status(400).json({ error: 'Image focal point must be between 0 and 100.' });
     if (!aspect.valid) return res.status(400).json({ error: 'A valid Menu image aspect ratio is required.' });
-    const updates: Record<string, unknown> = { name, description, category, image, featured };
+    if (!price.valid) return res.status(400).json({ error: 'Price is required and must be zero or greater.' });
+    if (!addOns.valid) return res.status(400).json({ error: 'Each add-on needs a name and a price of zero or greater (up to 20 add-ons).' });
+    const updates: Record<string, unknown> = { name, description, category, image, featured, price: price.price, addOns: addOns.addOns };
     if (focal.provided) {
       updates.imageFocalX = focal.imageFocalX;
       updates.imageFocalY = focal.imageFocalY;
@@ -202,7 +228,7 @@ router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = new Date();
     item.archivedBy = req.adminId;
     await item.save();
-    await recordContentArchiveEvent({ action: 'archive', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, details: { name: item.name, description: item.description, category: item.category, image: item.image || null, imageFocalX: item.imageFocalX, imageFocalY: item.imageFocalY, imageAspectRatio: item.imageAspectRatio, featured: item.featured }, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, details: { name: item.name, description: item.description, category: item.category, price: item.price, addOns: item.addOns, image: item.image || null, imageFocalX: item.imageFocalX, imageFocalY: item.imageFocalY, imageAspectRatio: item.imageAspectRatio, featured: item.featured }, actorId: req.adminId });
     res.json({ message: 'Menu item archived', item });
   } catch (error) {
     console.error(error);
@@ -219,7 +245,7 @@ router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => 
     item.archivedAt = undefined;
     item.archivedBy = undefined;
     await item.save();
-    await recordContentArchiveEvent({ action: 'restore', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, details: { name: item.name, description: item.description, category: item.category, image: item.image || null, imageFocalX: item.imageFocalX, imageFocalY: item.imageFocalY, imageAspectRatio: item.imageAspectRatio, featured: item.featured }, actorId: req.adminId });
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'menu', resourceId: item._id, resourceLabel: item.name, details: { name: item.name, description: item.description, category: item.category, price: item.price, addOns: item.addOns, image: item.image || null, imageFocalX: item.imageFocalX, imageFocalY: item.imageFocalY, imageAspectRatio: item.imageAspectRatio, featured: item.featured }, actorId: req.adminId });
     res.json({ message: 'Menu item restored', item });
   } catch (error) {
     console.error(error);

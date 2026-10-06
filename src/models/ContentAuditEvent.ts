@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export const auditedContentResources = ['menu', 'gallery', 'testimonial', 'service', 'faq', 'contact', 'enquiry'] as const;
+export const auditedContentResources = ['menu', 'gallery', 'testimonial', 'service', 'faq', 'contact', 'enquiry', 'order'] as const;
 export type AuditedContentResource = typeof auditedContentResources[number];
 export const archiveAuditActions = ['archive', 'restore'] as const;
 export type ArchiveAuditAction = typeof archiveAuditActions[number];

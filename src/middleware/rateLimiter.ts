@@ -24,6 +24,14 @@ export const passwordResetLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const orderLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  message: { error: 'Too many orders submitted. Please try again in a little while.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,

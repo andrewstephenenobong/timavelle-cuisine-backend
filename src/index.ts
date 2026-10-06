@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { connectDB } from './config/db';
 import enquiryRoutes from './routes/enquiries';
+import orderRoutes from './routes/orders';
 import authRoutes from './routes/auth';
 import menuRoutes from './routes/menu';
 import galleryRoutes from './routes/gallery';
@@ -47,6 +48,7 @@ app.use(cors({
 app.use(morgan('dev'));
 app.use(express.json({ limit: '100kb' }));
 app.use('/api/enquiries', enquiryRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/gallery', galleryRoutes);

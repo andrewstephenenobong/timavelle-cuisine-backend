@@ -1,10 +1,17 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { IMediaQuality, MediaQualitySchema } from './mediaMetadata';
 
+export interface IMenuAddOn {
+  name: string;
+  price: number;
+}
+
 export interface IMenuItem extends Document {
   name: string;
   description: string;
   category: string;
+  price: number;
+  addOns: IMenuAddOn[];
   image?: string;
   imageFocalX: number;
   imageFocalY: number;
@@ -21,10 +28,17 @@ export interface IMenuItem extends Document {
   createdAt: Date;
 }
 
+const MenuAddOnSchema = new Schema<IMenuAddOn>({
+  name: { type: String, required: true, trim: true },
+  price: { type: Number, required: true, min: 0 },
+}, { _id: false });
+
 const MenuItemSchema = new Schema<IMenuItem>({
   name: { type: String, required: true, trim: true },
   description: { type: String, required: true, trim: true },
   category: { type: String, required: true, trim: true },
+  price: { type: Number, required: true, min: 0, default: 0 },
+  addOns: { type: [MenuAddOnSchema], default: [] },
   image: { type: String, trim: true },
   imageFocalX: { type: Number, default: 50, min: 0, max: 100 },
   imageFocalY: { type: Number, default: 50, min: 0, max: 100 },

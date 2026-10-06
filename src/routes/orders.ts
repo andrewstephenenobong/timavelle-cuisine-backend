@@ -1,0 +1,235 @@
+import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
+import Order, { ORDER_STATUSES, ORDER_TYPES, OrderStatus } from '../models/Order';
+import MenuItem from '../models/MenuItem';
+import { AuthRequest, protect } from '../middleware/auth';
+import { orderLimiter } from '../middleware/rateLimiter';
+import { recordContentArchiveEvent } from '../lib/contentArchive';
+
+const router = Router();
+export const ORDER_SCOPES = ['active', 'archived', 'all'] as const;
+export const ORDER_BULK_ACTIONS = ['archive', 'restore', 'delete'] as const;
+const MAX_BULK_ORDERS = 100;
+const MAX_ORDER_LINES = 50;
+
+function orderAuditLabel(id: mongoose.Types.ObjectId | string) {
+  return `Order #${String(id).slice(-6)}`;
+}
+
+function parsePage(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value ?? fallback);
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback;
+}
+
+function parseIds(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_BULK_ORDERS) return null;
+  const ids = [...new Set(value.filter((item): item is string => typeof item === 'string' && mongoose.isValidObjectId(item)))];
+  return ids.length === value.length ? ids : null;
+}
+
+// Prices are always recomputed from the live catalog here — the client only ever sends menu item ids,
+// quantities and the names of chosen add-ons. This is what stops a tampered client request from
+// submitting an order at an arbitrary price.
+async function buildPricedLines(rawItems: unknown) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0 || rawItems.length > MAX_ORDER_LINES) {
+    return { error: `An order needs between 1 and ${MAX_ORDER_LINES} items.` as string | null, lines: [], subtotal: 0 };
+  }
+  const lines: { menuItemId: string; name: string; unitPrice: number; quantity: number; addOns: { name: string; price: number }[]; lineTotal: number }[] = [];
+  let subtotal = 0;
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== 'object') return { error: 'Each order item must be an object.', lines: [], subtotal: 0 };
+    const { menuItemId, quantity, addOns: requestedAddOns } = raw as Record<string, unknown>;
+    if (typeof menuItemId !== 'string' || !mongoose.isValidObjectId(menuItemId)) return { error: 'Each order item needs a valid menu item id.', lines: [], subtotal: 0 };
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 50) return { error: 'Item quantities must be whole numbers between 1 and 50.', lines: [], subtotal: 0 };
+    const menuItem = await MenuItem.findOne({ _id: menuItemId, archivedAt: { $exists: false } });
+    if (!menuItem) return { error: 'One of the items in this order is no longer available.', lines: [], subtotal: 0 };
+    const requestedNames = Array.isArray(requestedAddOns) ? requestedAddOns.filter((name): name is string => typeof name === 'string') : [];
+    const matchedAddOns = menuItem.addOns.filter((addOn) => requestedNames.includes(addOn.name)).map((addOn) => ({ name: addOn.name, price: addOn.price }));
+    if (matchedAddOns.length !== requestedNames.length) return { error: `One of the selected add-ons for "${menuItem.name}" is no longer available.`, lines: [], subtotal: 0 };
+    const unitPrice = menuItem.price + matchedAddOns.reduce((sum, addOn) => sum + addOn.price, 0);
+    const lineTotal = unitPrice * qty;
+    subtotal += lineTotal;
+    lines.push({ menuItemId, name: menuItem.name, unitPrice: menuItem.price, quantity: qty, addOns: matchedAddOns, lineTotal });
+  }
+  return { error: null, lines, subtotal };
+}
+
+router.post('/', orderLimiter, async (req: Request, res: Response) => {
+  try {
+    const { customerName, customerPhone, orderType, deliveryAddress, notes, channel } = req.body as Record<string, unknown>;
+    const name = typeof customerName === 'string' ? customerName.trim() : '';
+    const phone = typeof customerPhone === 'string' ? customerPhone.trim() : '';
+    if (!name) return res.status(400).json({ error: 'Your name is required.' });
+    if (!phone) return res.status(400).json({ error: 'A phone number is required.' });
+    if (!ORDER_TYPES.includes(orderType as typeof ORDER_TYPES[number])) return res.status(400).json({ error: 'Choose delivery or pickup.' });
+    const address = typeof deliveryAddress === 'string' ? deliveryAddress.trim() : '';
+    if (orderType === 'delivery' && !address) return res.status(400).json({ error: 'A delivery address is required for delivery orders.' });
+
+    const priced = await buildPricedLines(req.body.items);
+    if (priced.error) return res.status(400).json({ error: priced.error });
+
+    const order = await Order.create({
+      customerName: name,
+      customerPhone: phone,
+      orderType: orderType as typeof ORDER_TYPES[number],
+      deliveryAddress: orderType === 'delivery' ? address : undefined,
+      items: priced.lines,
+      subtotal: priced.subtotal,
+      total: priced.subtotal,
+      notes: typeof notes === 'string' ? notes.trim().slice(0, 500) : undefined,
+      channel: channel === 'admin' ? 'admin' : 'whatsapp',
+    });
+    res.status(201).json({ message: 'Order received', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong submitting your order.' });
+  }
+});
+
+router.get('/', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const page = parsePage(req.query.page, 1, 100000);
+    const limit = parsePage(req.query.limit, 20, 100);
+    const skip = (page - 1) * limit;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+    const scope = typeof req.query.scope === 'string' ? req.query.scope : 'active';
+
+    if (status && !ORDER_STATUSES.includes(status as OrderStatus)) return res.status(400).json({ error: 'Invalid order status.' });
+    if (!ORDER_SCOPES.includes(scope as typeof ORDER_SCOPES[number])) return res.status(400).json({ error: 'Invalid order scope.' });
+
+    const filter: Record<string, unknown> = {};
+    if (status) filter.status = status;
+    if (scope === 'active') filter.archivedAt = { $exists: false };
+    if (scope === 'archived') filter.archivedAt = { $exists: true };
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [{ customerName: { $regex: escaped, $options: 'i' } }, { customerPhone: { $regex: escaped, $options: 'i' } }];
+    }
+
+    const [items, total] = await Promise.all([
+      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Order.countDocuments(filter),
+    ]);
+    res.json({ items, page, limit, total, pages: Math.max(1, Math.ceil(total / limit)), scope });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong loading orders.' });
+  }
+});
+
+router.get('/:id', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong loading the order.' });
+  }
+});
+
+router.patch('/:id/status', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const { status } = req.body as { status?: string };
+    if (!status || !ORDER_STATUSES.includes(status as OrderStatus)) return res.status(400).json({ error: 'A valid order status is required.' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true, runValidators: true });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ message: 'Order status updated', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong updating order status.' });
+  }
+});
+
+router.patch('/:id/notes', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const internalNotes = typeof req.body.internalNotes === 'string' ? req.body.internalNotes.trim().slice(0, 5000) : null;
+    if (internalNotes === null) return res.status(400).json({ error: 'Internal notes must be text.' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { internalNotes }, { new: true, runValidators: true });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ message: 'Internal notes updated', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong updating order notes.' });
+  }
+});
+
+router.post('/bulk-action', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const { action } = req.body as { action?: string };
+    const ids = parseIds(req.body?.ids);
+    if (!ids) return res.status(400).json({ error: `Select between 1 and ${MAX_BULK_ORDERS} valid orders.` });
+    if (!action || !ORDER_BULK_ACTIONS.includes(action as typeof ORDER_BULK_ACTIONS[number])) return res.status(400).json({ error: 'A valid bulk order action is required.' });
+
+    if (action === 'delete') {
+      const result = await Order.deleteMany({ _id: { $in: ids } });
+      return res.json({ message: 'Bulk order deletion complete', action, requestedCount: ids.length, affectedCount: result.deletedCount, skippedCount: ids.length - result.deletedCount });
+    }
+
+    const filter: Record<string, unknown> = { _id: { $in: ids } };
+    const update: Record<string, unknown> = {};
+    if (action === 'archive') { filter.archivedAt = { $exists: false }; update.$set = { archivedAt: new Date(), archivedBy: req.adminId }; }
+    else { filter.archivedAt = { $exists: true }; update.$unset = { archivedAt: 1, archivedBy: 1 }; }
+    const matchingOrders = await Order.find(filter).select('_id').lean();
+    await Order.updateMany(filter, update);
+    await Promise.all(matchingOrders.map((order) => recordContentArchiveEvent({ action: action as 'archive' | 'restore', resourceType: 'order', resourceId: order._id, resourceLabel: orderAuditLabel(order._id), details: { privacy: 'Order customer and item values are deliberately not copied into audit history.' }, actorId: req.adminId })));
+    const affectedCount = matchingOrders.length;
+    res.json({ message: `Bulk order ${action} complete`, action, requestedCount: ids.length, affectedCount, skippedCount: ids.length - affectedCount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong applying the bulk order action.' });
+  }
+});
+
+router.post('/:id/archive', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    if (order.archivedAt) return res.status(409).json({ error: 'Order is already archived.' });
+    order.archivedAt = new Date();
+    order.archivedBy = req.adminId;
+    await order.save();
+    await recordContentArchiveEvent({ action: 'archive', resourceType: 'order', resourceId: order._id, resourceLabel: orderAuditLabel(order._id), details: { privacy: 'Order customer and item values are deliberately not copied into audit history.' }, actorId: req.adminId });
+    res.json({ message: 'Order archived', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong archiving the order.' });
+  }
+});
+
+router.post('/:id/restore', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    if (!order.archivedAt) return res.status(409).json({ error: 'Order is already active.' });
+    order.archivedAt = undefined;
+    order.archivedBy = undefined;
+    await order.save();
+    await recordContentArchiveEvent({ action: 'restore', resourceType: 'order', resourceId: order._id, resourceLabel: orderAuditLabel(order._id), details: { privacy: 'Order customer and item values are deliberately not copied into audit history.' }, actorId: req.adminId });
+    res.json({ message: 'Order restored', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong restoring the order.' });
+  }
+});
+
+router.delete('/:id', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ message: 'Order deleted', orderId: order._id });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong deleting the order.' });
+  }
+});
+
+export default router; 
