@@ -35,9 +35,14 @@ export interface IOrder extends Document {
   customerName: string;
   customerPhone: string;
   orderType: OrderType;
+  deliveryAreaId?: mongoose.Types.ObjectId;
+  deliveryAreaName?: string;
+  deliveryFee: number;
   deliveryAddress?: string;
   items: IOrderLine[];
   subtotal: number;
+  discountCode?: string;
+  discountAmount: number;
   total: number;
   notes?: string;
   status: OrderStatus;
@@ -45,6 +50,10 @@ export interface IOrder extends Document {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   paymentInstructions?: IOrderPaymentInstructions;
+  receiptUrl?: string;
+  receiptUploadedAt?: Date;
+  paymentRejectionReason?: string;
+  idempotencyKey?: string;
   checkoutTokenHash?: string;
   checkoutTokenExpiresAt?: Date;
   internalNotes: string;
@@ -78,9 +87,14 @@ const OrderSchema = new Schema<IOrder>({
   customerName: { type: String, required: true, trim: true, maxlength: 120 },
   customerPhone: { type: String, required: true, trim: true, maxlength: 32 },
   orderType: { type: String, enum: ORDER_TYPES, required: true },
+  deliveryAreaId: { type: Schema.Types.ObjectId, ref: 'DeliveryArea' },
+  deliveryAreaName: { type: String, trim: true, maxlength: 120 },
+  deliveryFee: { type: Number, required: true, min: 0, default: 0 },
   deliveryAddress: { type: String, trim: true, maxlength: 300 },
   items: { type: [OrderLineSchema], required: true, validate: { validator: (value: IOrderLine[]) => Array.isArray(value) && value.length > 0 && value.length <= 50, message: 'An order needs between 1 and 50 items.' } },
   subtotal: { type: Number, required: true, min: 0 },
+  discountCode: { type: String, trim: true, uppercase: true, maxlength: 40 },
+  discountAmount: { type: Number, required: true, min: 0, default: 0 },
   total: { type: Number, required: true, min: 0 },
   notes: { type: String, trim: true, maxlength: 500 },
   status: { type: String, enum: ORDER_STATUSES, default: 'new', index: true },
@@ -88,6 +102,10 @@ const OrderSchema = new Schema<IOrder>({
   paymentMethod: { type: String, enum: PAYMENT_METHODS, default: 'whatsapp' },
   paymentStatus: { type: String, enum: PAYMENT_STATUSES, default: 'unpaid' },
   paymentInstructions: { type: OrderPaymentInstructionsSchema },
+  receiptUrl: { type: String, trim: true },
+  receiptUploadedAt: { type: Date },
+  paymentRejectionReason: { type: String, trim: true, maxlength: 500 },
+  idempotencyKey: { type: String, trim: true, maxlength: 100, select: false },
   checkoutTokenHash: { type: String, select: false },
   checkoutTokenExpiresAt: { type: Date, select: false },
   internalNotes: { type: String, trim: true, default: '' },
@@ -96,5 +114,6 @@ const OrderSchema = new Schema<IOrder>({
 }, { timestamps: true });
 
 OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

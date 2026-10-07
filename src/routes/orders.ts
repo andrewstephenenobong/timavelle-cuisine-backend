@@ -7,12 +7,20 @@ import PaymentSettings from '../models/PaymentSettings';
 import { AuthRequest, protect } from '../middleware/auth';
 import { orderLimiter } from '../middleware/rateLimiter';
 import { recordContentArchiveEvent } from '../lib/contentArchive';
+import DeliveryArea from '../models/DeliveryArea';
+import DiscountCode from '../models/DiscountCode';
+import multer from 'multer';
+import cloudinary from '../config/cloudinary';
 
 const router = Router();
 export const ORDER_SCOPES = ['active', 'archived', 'all'] as const;
 export const ORDER_BULK_ACTIONS = ['archive', 'restore', 'delete'] as const;
 const MAX_BULK_ORDERS = 100;
 const MAX_ORDER_LINES = 50;
+const receiptUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, callback) => {
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+  callback(null, allowed.has(file.mimetype.toLowerCase()));
+} });
 
 function orderAuditLabel(id: mongoose.Types.ObjectId | string) {
   return `Order #${String(id).slice(-6)}`;
@@ -57,9 +65,32 @@ async function buildPricedLines(rawItems: unknown) {
   return { error: null, lines, subtotal };
 }
 
+function hashCheckoutToken(token: string) { return createHash('sha256').update(token).digest('hex'); }
+
+async function uploadReceipt(buffer: Buffer, mimetype: string) {
+  return new Promise<string>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream({ folder: 'timavelle-cuisine/payment-receipts', resource_type: mimetype === 'application/pdf' ? 'raw' : 'image' }, (error, result) => {
+      if (error || !result) return reject(error || new Error('Receipt upload failed'));
+      resolve(result.secure_url);
+    });
+    stream.end(buffer);
+  });
+}
+
 router.post('/', orderLimiter, async (req: Request, res: Response) => {
   try {
-    const { customerName, customerPhone, orderType, deliveryAddress, notes } = req.body as Record<string, unknown>;
+    const { customerName, customerPhone, orderType, deliveryAddress, notes, deliveryAreaId, discountCode } = req.body as Record<string, unknown>;
+    const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'].trim().slice(0, 100) : '';
+    if (idempotencyKey) {
+      const existing = await Order.findOne({ idempotencyKey }).select('+idempotencyKey');
+      if (existing) {
+        const retryToken = existing.paymentMethod === 'bank_transfer' ? randomBytes(32).toString('base64url') : undefined;
+        if (retryToken) { existing.checkoutTokenHash = hashCheckoutToken(retryToken); existing.checkoutTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); await existing.save(); }
+        const retryOrder = existing.toObject();
+        delete retryOrder.checkoutTokenHash; delete retryOrder.checkoutTokenExpiresAt;
+        return res.status(200).json({ message: 'Order already prepared', order: retryOrder, ...(retryToken ? { checkoutToken: retryToken } : {}) });
+      }
+    }
     const requestedPaymentMethod = (req.body as Record<string, unknown>).paymentMethod ?? 'whatsapp';
     const name = typeof customerName === 'string' ? customerName.trim() : '';
     const phone = typeof customerPhone === 'string' ? customerPhone.trim() : '';
@@ -73,19 +104,42 @@ router.post('/', orderLimiter, async (req: Request, res: Response) => {
     if (paymentMethod === 'whatsapp' && !paymentSettings?.whatsappEnabled) return res.status(400).json({ error: 'WhatsApp ordering is temporarily unavailable. Please choose bank transfer.' });
     const address = typeof deliveryAddress === 'string' ? deliveryAddress.trim() : '';
     if (orderType === 'delivery' && !address) return res.status(400).json({ error: 'A delivery address is required for delivery orders.' });
+    let deliveryFee = 0;
+    let deliveryAreaName: string | undefined;
+    let resolvedDeliveryAreaId: mongoose.Types.ObjectId | undefined;
+    if (orderType === 'delivery') {
+      if (typeof deliveryAreaId !== 'string' || !mongoose.isValidObjectId(deliveryAreaId)) return res.status(400).json({ error: 'Choose a valid delivery area.' });
+      const area = await DeliveryArea.findOne({ _id: deliveryAreaId, active: true });
+      if (!area) return res.status(400).json({ error: 'That delivery area is no longer available. Please choose another area.' });
+      deliveryFee = area.fee; deliveryAreaName = area.name; resolvedDeliveryAreaId = area._id;
+    }
 
     const priced = await buildPricedLines(req.body.items);
     if (priced.error) return res.status(400).json({ error: priced.error });
+    let discountAmount = 0;
+    let normalizedDiscountCode: string | undefined;
+    if (typeof discountCode === 'string' && discountCode.trim()) {
+      normalizedDiscountCode = discountCode.trim().toUpperCase();
+      const discount = await DiscountCode.findOne({ code: normalizedDiscountCode, active: true });
+      if (!discount || (discount.expiresAt && discount.expiresAt.getTime() < Date.now()) || (discount.usageLimit && discount.usedCount >= discount.usageLimit)) return res.status(400).json({ error: 'That discount code is invalid or has expired.' });
+      if (priced.subtotal < discount.minimumOrderValue) return res.status(400).json({ error: `This code requires a minimum order of ₦${discount.minimumOrderValue.toLocaleString('en-NG')}.` });
+      discountAmount = discount.type === 'percent' ? Math.min(priced.subtotal, Math.round(priced.subtotal * discount.value / 100)) : Math.min(priced.subtotal, discount.value);
+    }
 
     const checkoutToken = paymentMethod === 'bank_transfer' ? randomBytes(32).toString('base64url') : undefined;
     const order = await Order.create({
       customerName: name,
       customerPhone: phone,
       orderType: orderType as typeof ORDER_TYPES[number],
+      deliveryAreaId: resolvedDeliveryAreaId,
+      deliveryAreaName,
+      deliveryFee,
       deliveryAddress: orderType === 'delivery' ? address : undefined,
       items: priced.lines,
       subtotal: priced.subtotal,
-      total: priced.subtotal,
+      discountCode: normalizedDiscountCode,
+      discountAmount,
+      total: Math.max(0, priced.subtotal + deliveryFee - discountAmount),
       notes: typeof notes === 'string' ? notes.trim().slice(0, 500) : undefined,
       channel: paymentMethod === 'whatsapp' ? 'whatsapp' : 'website',
       paymentMethod,
@@ -93,7 +147,9 @@ router.post('/', orderLimiter, async (req: Request, res: Response) => {
       status: paymentMethod === 'bank_transfer' ? 'awaiting_payment' : 'new',
       ...(paymentMethod === 'bank_transfer' && paymentSettings ? { paymentInstructions: { bankName: paymentSettings.bankName, accountName: paymentSettings.accountName, accountNumber: paymentSettings.accountNumber } } : {}),
       ...(checkoutToken ? { checkoutTokenHash: createHash('sha256').update(checkoutToken).digest('hex'), checkoutTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) } : {}),
+      ...(idempotencyKey ? { idempotencyKey } : {}),
     });
+    if (normalizedDiscountCode) await DiscountCode.updateOne({ code: normalizedDiscountCode }, { $inc: { usedCount: 1 } });
     const responseOrder = order.toObject();
     delete responseOrder.checkoutTokenHash;
     delete responseOrder.checkoutTokenExpiresAt;
@@ -102,6 +158,45 @@ router.post('/', orderLimiter, async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong submitting your order.' });
   }
+});
+
+async function findOrderForCheckout(id: string, token: unknown) {
+  if (!mongoose.isValidObjectId(id) || typeof token !== 'string' || token.length < 32 || token.length > 128) return null;
+  const order = await Order.findById(id).select('+checkoutTokenHash +checkoutTokenExpiresAt');
+  if (!order || !order.checkoutTokenHash || order.checkoutTokenHash !== hashCheckoutToken(token)) return null;
+  if (order.checkoutTokenExpiresAt && order.checkoutTokenExpiresAt.getTime() < Date.now()) return null;
+  return order;
+}
+
+router.post('/:id/access', orderLimiter, async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const order = await findOrderForCheckout(id, req.body?.checkoutToken);
+    if (!order) return res.status(404).json({ error: 'This secure order link is invalid or has expired.' });
+    const responseOrder = order.toObject();
+    delete responseOrder.checkoutTokenHash; delete responseOrder.checkoutTokenExpiresAt;
+    res.set('Cache-Control', 'no-store');
+    res.json({ order: responseOrder });
+  } catch (error) { console.error(error); res.status(500).json({ error: 'Could not load this order.' }); }
+});
+
+router.post('/:id/receipt', orderLimiter, (req: Request, res: Response, next) => {
+  receiptUpload.single('receipt')(req, res, async (uploadError) => {
+    if (uploadError) return res.status(415).json({ error: 'Receipt must be a JPG, PNG, WebP, or PDF file up to 8 MB.' });
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const order = await findOrderForCheckout(id, req.body?.checkoutToken);
+      if (!order) return res.status(404).json({ error: 'This secure checkout session is invalid or has expired.' });
+      if (!req.file) return res.status(400).json({ error: 'Choose a payment receipt before continuing.' });
+      order.receiptUrl = await uploadReceipt(req.file.buffer, req.file.mimetype);
+      order.receiptUploadedAt = new Date();
+      order.paymentStatus = 'receipt_submitted';
+      await order.save();
+      const responseOrder = order.toObject();
+      delete responseOrder.checkoutTokenHash; delete responseOrder.checkoutTokenExpiresAt;
+      res.json({ message: 'Payment receipt uploaded.', order: responseOrder });
+    } catch (error) { console.error(error); res.status(502).json({ error: 'The receipt could not be saved. Please try again with a smaller file.' }); }
+  });
 });
 
 router.post('/:id/place', orderLimiter, async (req: Request, res: Response) => {
@@ -133,8 +228,10 @@ router.patch('/:id/payment-status', protect, async (req: AuthRequest, res: Respo
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
     const paymentStatus = (req.body as { paymentStatus?: string }).paymentStatus;
+    const rejectionReason = typeof req.body.rejectionReason === 'string' ? req.body.rejectionReason.trim().slice(0, 500) : '';
     if (!paymentStatus || !PAYMENT_STATUSES.includes(paymentStatus as PaymentStatus)) return res.status(400).json({ error: 'A valid payment status is required.' });
-    const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus }, { new: true, runValidators: true });
+    if (paymentStatus === 'rejected' && !rejectionReason) return res.status(400).json({ error: 'Add a reason when rejecting a payment receipt.' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus, ...(paymentStatus === 'rejected' ? { paymentRejectionReason: rejectionReason } : { $unset: { paymentRejectionReason: 1 } }) }, { new: true, runValidators: true });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     res.json({ message: 'Payment status updated', order });
   } catch (error) {

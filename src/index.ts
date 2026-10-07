@@ -18,6 +18,7 @@ import heroImageRoutes from './routes/heroImage';
 import aboutImageRoutes from './routes/aboutImage';
 import contentAuditRoutes from './routes/contentAudit';
 import paymentSettingsRoutes from './routes/paymentSettings';
+import checkoutConfigRoutes from './routes/checkoutConfig';
 import mongoose from 'mongoose';
 
 dotenv.config();
@@ -51,6 +52,7 @@ app.use(express.json({ limit: '100kb' }));
 app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payment-settings', paymentSettingsRoutes);
+app.use('/api/checkout-config', checkoutConfigRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/gallery', galleryRoutes);
