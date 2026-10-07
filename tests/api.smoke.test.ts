@@ -13,6 +13,18 @@ test('health exposes the API readiness state', async () => {
   assert.equal(typeof response.body.uptimeSeconds, 'number');
 });
 
+test('simulated customer OTP issues a history token and protects history access', async () => {
+  const phone = `+234811${Date.now().toString().slice(-6)}`;
+  const requestCode = await request(app).post('/api/customer-orders/request-otp').send({ phone });
+  assert.equal(requestCode.status, 200);
+  assert.equal(requestCode.body.devCode, '123456');
+  const verify = await request(app).post('/api/customer-orders/verify-otp').send({ phone, code: requestCode.body.devCode });
+  assert.equal(verify.status, 200);
+  assert.equal(typeof verify.body.token, 'string');
+  const invalidHistory = await request(app).get('/api/customer-orders').set('Authorization', 'Bearer invalid');
+  assert.equal(invalidHistory.status, 401);
+});
+
 test('enquiry inbox is protected', async () => {
   const response = await request(app).get('/api/enquiries');
   assert.equal(response.status, 401);

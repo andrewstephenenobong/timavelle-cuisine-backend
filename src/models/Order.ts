@@ -34,6 +34,7 @@ export interface IOrderPaymentInstructions {
 export interface IOrder extends Document {
   customerName: string;
   customerPhone: string;
+  customerPhoneNormalized: string;
   orderType: OrderType;
   deliveryAreaId?: mongoose.Types.ObjectId;
   deliveryAreaName?: string;
@@ -86,6 +87,7 @@ const OrderPaymentInstructionsSchema = new Schema<IOrderPaymentInstructions>({
 const OrderSchema = new Schema<IOrder>({
   customerName: { type: String, required: true, trim: true, maxlength: 120 },
   customerPhone: { type: String, required: true, trim: true, maxlength: 32 },
+  customerPhoneNormalized: { type: String, required: true, trim: true, maxlength: 32, index: true },
   orderType: { type: String, enum: ORDER_TYPES, required: true },
   deliveryAreaId: { type: Schema.Types.ObjectId, ref: 'DeliveryArea' },
   deliveryAreaName: { type: String, trim: true, maxlength: 120 },

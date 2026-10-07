@@ -11,6 +11,7 @@ import DeliveryArea from '../models/DeliveryArea';
 import DiscountCode from '../models/DiscountCode';
 import multer from 'multer';
 import cloudinary from '../config/cloudinary';
+import { normalizeCustomerPhone } from '../lib/customerPhone';
 
 const router = Router();
 export const ORDER_SCOPES = ['active', 'archived', 'all'] as const;
@@ -130,6 +131,7 @@ router.post('/', orderLimiter, async (req: Request, res: Response) => {
     const order = await Order.create({
       customerName: name,
       customerPhone: phone,
+      customerPhoneNormalized: normalizeCustomerPhone(phone),
       orderType: orderType as typeof ORDER_TYPES[number],
       deliveryAreaId: resolvedDeliveryAreaId,
       deliveryAreaName,
