@@ -54,6 +54,14 @@ router.post('/request-otp', orderLimiter, async (req, res) => {
   return res.json(response);
 });
 
+router.post('/lookup', orderLimiter, async (req, res) => {
+  const phone = typeof req.body?.phone === 'string' ? normalizeCustomerPhone(req.body.phone) : '';
+  if (phone.length < 7 || phone.length > 32) return res.status(400).json({ error: 'Enter the phone number used during checkout.' });
+  const token = signCustomerHistoryToken(phone);
+  res.set('Cache-Control', 'no-store');
+  return res.json({ token, expiresInSeconds: 7 * 24 * 60 * 60 });
+});
+
 router.post('/verify-otp', orderLimiter, async (req, res) => {
   const phone = typeof req.body?.phone === 'string' ? normalizeCustomerPhone(req.body.phone) : '';
   const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
