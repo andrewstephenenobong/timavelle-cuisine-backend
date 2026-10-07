@@ -19,6 +19,20 @@ test('enquiry inbox is protected', async () => {
   assert.match(response.body.error, /authorized/i);
 });
 
+test('payment settings management and payment verification are protected', async () => {
+  const settingsResponse = await request(app).get('/api/payment-settings/admin');
+  assert.equal(settingsResponse.status, 401);
+  const updateSettingsResponse = await request(app).put('/api/payment-settings/admin').send({ bankName: 'Access Bank' });
+  assert.equal(updateSettingsResponse.status, 401);
+  const paymentStatusResponse = await request(app).patch('/api/orders/507f1f77bcf86cd799439011/payment-status').send({ paymentStatus: 'paid' });
+  assert.equal(paymentStatusResponse.status, 401);
+});
+
+test('bank-transfer final placement requires a valid checkout capability', async () => {
+  const response = await request(app).post('/api/orders/507f1f77bcf86cd799439011/place').send({ checkoutToken: 'invalid' });
+  assert.equal(response.status, 401);
+});
+
 test('enquiry deletion is protected', async () => {
   const response = await request(app).delete('/api/enquiries/507f1f77bcf86cd799439011');
   assert.equal(response.status, 401);

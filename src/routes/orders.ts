@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
-import Order, { ORDER_STATUSES, ORDER_TYPES, OrderStatus } from '../models/Order';
+import { createHash, randomBytes } from 'node:crypto';
+import Order, { ORDER_STATUSES, ORDER_TYPES, PAYMENT_STATUSES, PAYMENT_METHODS, OrderStatus, PaymentMethod, PaymentStatus } from '../models/Order';
 import MenuItem from '../models/MenuItem';
+import PaymentSettings from '../models/PaymentSettings';
 import { AuthRequest, protect } from '../middleware/auth';
 import { orderLimiter } from '../middleware/rateLimiter';
 import { recordContentArchiveEvent } from '../lib/contentArchive';
@@ -57,18 +59,25 @@ async function buildPricedLines(rawItems: unknown) {
 
 router.post('/', orderLimiter, async (req: Request, res: Response) => {
   try {
-    const { customerName, customerPhone, orderType, deliveryAddress, notes, channel } = req.body as Record<string, unknown>;
+    const { customerName, customerPhone, orderType, deliveryAddress, notes } = req.body as Record<string, unknown>;
+    const requestedPaymentMethod = (req.body as Record<string, unknown>).paymentMethod ?? 'whatsapp';
     const name = typeof customerName === 'string' ? customerName.trim() : '';
     const phone = typeof customerPhone === 'string' ? customerPhone.trim() : '';
     if (!name) return res.status(400).json({ error: 'Your name is required.' });
     if (!phone) return res.status(400).json({ error: 'A phone number is required.' });
     if (!ORDER_TYPES.includes(orderType as typeof ORDER_TYPES[number])) return res.status(400).json({ error: 'Choose delivery or pickup.' });
+    if (!PAYMENT_METHODS.includes(requestedPaymentMethod as PaymentMethod)) return res.status(400).json({ error: 'Choose a supported checkout option.' });
+    const paymentMethod = requestedPaymentMethod as PaymentMethod;
+    const paymentSettings = await PaymentSettings.findOne({ key: 'main' });
+    if (paymentMethod === 'bank_transfer' && !paymentSettings?.bankTransferEnabled) return res.status(400).json({ error: 'Bank transfer is temporarily unavailable. Please choose WhatsApp.' });
+    if (paymentMethod === 'whatsapp' && !paymentSettings?.whatsappEnabled) return res.status(400).json({ error: 'WhatsApp ordering is temporarily unavailable. Please choose bank transfer.' });
     const address = typeof deliveryAddress === 'string' ? deliveryAddress.trim() : '';
     if (orderType === 'delivery' && !address) return res.status(400).json({ error: 'A delivery address is required for delivery orders.' });
 
     const priced = await buildPricedLines(req.body.items);
     if (priced.error) return res.status(400).json({ error: priced.error });
 
+    const checkoutToken = paymentMethod === 'bank_transfer' ? randomBytes(32).toString('base64url') : undefined;
     const order = await Order.create({
       customerName: name,
       customerPhone: phone,
@@ -78,12 +87,59 @@ router.post('/', orderLimiter, async (req: Request, res: Response) => {
       subtotal: priced.subtotal,
       total: priced.subtotal,
       notes: typeof notes === 'string' ? notes.trim().slice(0, 500) : undefined,
-      channel: channel === 'admin' ? 'admin' : 'whatsapp',
+      channel: paymentMethod === 'whatsapp' ? 'whatsapp' : 'website',
+      paymentMethod,
+      paymentStatus: 'unpaid',
+      status: paymentMethod === 'bank_transfer' ? 'awaiting_payment' : 'new',
+      ...(paymentMethod === 'bank_transfer' && paymentSettings ? { paymentInstructions: { bankName: paymentSettings.bankName, accountName: paymentSettings.accountName, accountNumber: paymentSettings.accountNumber } } : {}),
+      ...(checkoutToken ? { checkoutTokenHash: createHash('sha256').update(checkoutToken).digest('hex'), checkoutTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) } : {}),
     });
-    res.status(201).json({ message: 'Order received', order });
+    const responseOrder = order.toObject();
+    delete responseOrder.checkoutTokenHash;
+    delete responseOrder.checkoutTokenExpiresAt;
+    res.status(201).json({ message: paymentMethod === 'bank_transfer' ? 'Payment details prepared' : 'Order received', order: responseOrder, ...(checkoutToken ? { checkoutToken } : {}) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong submitting your order.' });
+  }
+});
+
+router.post('/:id/place', orderLimiter, async (req: Request, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const token = typeof req.body?.checkoutToken === 'string' ? req.body.checkoutToken : '';
+    if (token.length < 32 || token.length > 128) return res.status(401).json({ error: 'Checkout session is invalid. Please contact Timavelle with your order reference.' });
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const order = await Order.findById(req.params.id).select('+checkoutTokenHash +checkoutTokenExpiresAt');
+    if (!order || order.checkoutTokenHash !== tokenHash) return res.status(404).json({ error: 'Checkout session could not be verified.' });
+    if (order.checkoutTokenExpiresAt && order.checkoutTokenExpiresAt.getTime() < Date.now()) return res.status(410).json({ error: 'This bank-transfer checkout has expired. Please contact Timavelle before transferring.' });
+    if (order.status === 'awaiting_payment') {
+      order.status = 'new';
+      await order.save();
+    } else if (order.status !== 'new') {
+      return res.status(409).json({ error: 'This order can no longer be placed from checkout.' });
+    }
+    const responseOrder = order.toObject();
+    delete responseOrder.checkoutTokenHash;
+    delete responseOrder.checkoutTokenExpiresAt;
+    res.json({ message: 'Order placed; payment remains unverified.', order: responseOrder });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong placing the order.' });
+  }
+});
+
+router.patch('/:id/payment-status', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid order id.' });
+    const paymentStatus = (req.body as { paymentStatus?: string }).paymentStatus;
+    if (!paymentStatus || !PAYMENT_STATUSES.includes(paymentStatus as PaymentStatus)) return res.status(400).json({ error: 'A valid payment status is required.' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus }, { new: true, runValidators: true });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ message: 'Payment status updated', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong updating payment status.' });
   }
 });
 
@@ -232,4 +288,4 @@ router.delete('/:id', protect, async (req: AuthRequest, res: Response) => {
   }
 });
 
-export default router; 
+export default router;

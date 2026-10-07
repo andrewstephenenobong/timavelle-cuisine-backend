@@ -1,11 +1,15 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export const ORDER_STATUSES = ['new', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled'] as const;
+export const ORDER_STATUSES = ['awaiting_payment', 'new', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled'] as const;
 export type OrderStatus = typeof ORDER_STATUSES[number];
 export const ORDER_TYPES = ['delivery', 'pickup'] as const;
 export type OrderType = typeof ORDER_TYPES[number];
-export const ORDER_CHANNELS = ['whatsapp', 'admin'] as const;
+export const ORDER_CHANNELS = ['website', 'whatsapp', 'admin'] as const;
 export type OrderChannel = typeof ORDER_CHANNELS[number];
+export const PAYMENT_METHODS = ['bank_transfer', 'whatsapp'] as const;
+export type PaymentMethod = typeof PAYMENT_METHODS[number];
+export const PAYMENT_STATUSES = ['unpaid', 'receipt_submitted', 'paid', 'rejected', 'refunded'] as const;
+export type PaymentStatus = typeof PAYMENT_STATUSES[number];
 
 export interface IOrderLineAddOn {
   name: string;
@@ -21,6 +25,12 @@ export interface IOrderLine {
   lineTotal: number;
 }
 
+export interface IOrderPaymentInstructions {
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+}
+
 export interface IOrder extends Document {
   customerName: string;
   customerPhone: string;
@@ -32,7 +42,11 @@ export interface IOrder extends Document {
   notes?: string;
   status: OrderStatus;
   channel: OrderChannel;
-  paymentStatus: 'unpaid' | 'paid';
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  paymentInstructions?: IOrderPaymentInstructions;
+  checkoutTokenHash?: string;
+  checkoutTokenExpiresAt?: Date;
   internalNotes: string;
   archivedAt?: Date;
   archivedBy?: string;
@@ -54,6 +68,12 @@ const OrderLineSchema = new Schema<IOrderLine>({
   lineTotal: { type: Number, required: true, min: 0 },
 }, { _id: false });
 
+const OrderPaymentInstructionsSchema = new Schema<IOrderPaymentInstructions>({
+  bankName: { type: String, required: true, trim: true },
+  accountName: { type: String, required: true, trim: true },
+  accountNumber: { type: String, required: true, trim: true },
+}, { _id: false });
+
 const OrderSchema = new Schema<IOrder>({
   customerName: { type: String, required: true, trim: true, maxlength: 120 },
   customerPhone: { type: String, required: true, trim: true, maxlength: 32 },
@@ -65,7 +85,11 @@ const OrderSchema = new Schema<IOrder>({
   notes: { type: String, trim: true, maxlength: 500 },
   status: { type: String, enum: ORDER_STATUSES, default: 'new', index: true },
   channel: { type: String, enum: ORDER_CHANNELS, default: 'whatsapp' },
-  paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'unpaid' },
+  paymentMethod: { type: String, enum: PAYMENT_METHODS, default: 'whatsapp' },
+  paymentStatus: { type: String, enum: PAYMENT_STATUSES, default: 'unpaid' },
+  paymentInstructions: { type: OrderPaymentInstructionsSchema },
+  checkoutTokenHash: { type: String, select: false },
+  checkoutTokenExpiresAt: { type: Date, select: false },
   internalNotes: { type: String, trim: true, default: '' },
   archivedAt: { type: Date, index: true },
   archivedBy: { type: String, trim: true },
