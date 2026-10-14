@@ -79,6 +79,37 @@ router.post('/', protect, async (req: AuthRequest, res: Response) => {
   }
 });
 
+const MAX_BATCH_GALLERY_IMAGES = 50;
+
+function isSafeGalleryImageUrl(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 2048 && (/^https:\/\//i.test(value) || value.startsWith('/'));
+}
+
+// Creates many gallery records in one request so a phone upload of 10-20 photos is one database round-trip,
+// all sharing one category. Individual images can be re-captioned later from the gallery grid.
+router.post('/batch', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const category = typeof req.body?.category === 'string' ? req.body.category.trim() : '';
+    const rawImages: unknown = req.body?.images;
+    if (!category || category.length > 80) return res.status(400).json({ error: 'A category (up to 80 characters) is required.' });
+    if (!Array.isArray(rawImages) || rawImages.length === 0 || rawImages.length > MAX_BATCH_GALLERY_IMAGES) {
+      return res.status(400).json({ error: `Add between 1 and ${MAX_BATCH_GALLERY_IMAGES} photos per batch.` });
+    }
+    const documents: { imageUrl: string; category: string; caption?: string }[] = [];
+    for (const entry of rawImages) {
+      const imageUrl = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).imageUrl : undefined;
+      if (!isSafeGalleryImageUrl(imageUrl)) return res.status(400).json({ error: 'Every photo needs a valid image URL.' });
+      const caption = entry && typeof entry === 'object' && typeof (entry as Record<string, unknown>).caption === 'string' ? ((entry as Record<string, unknown>).caption as string).trim().slice(0, 200) : '';
+      documents.push({ imageUrl, category, ...(caption ? { caption } : {}) });
+    }
+    const images = await GalleryImage.insertMany(documents);
+    res.status(201).json({ message: `${images.length} photo${images.length === 1 ? '' : 's'} added`, count: images.length, images });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong adding these photos.' });
+  }
+});
+
 router.post('/bulk-action', protect, async (req: AuthRequest, res: Response) => {
   try {
     const { action } = req.body as { action?: string };
