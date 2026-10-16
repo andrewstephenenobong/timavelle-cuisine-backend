@@ -34,7 +34,7 @@ export const orderLimiter = rateLimit({
 
 export const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: 120,
   message: { error: 'Too many uploads. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

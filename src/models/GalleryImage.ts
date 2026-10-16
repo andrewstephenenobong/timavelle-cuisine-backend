@@ -11,6 +11,7 @@ export interface IGalleryImage extends Document {
   mediaUseCount: number;
   mediaQuality?: IMediaQuality;
   mediaFingerprint?: string;
+  sortOrder?: number;
   archivedAt?: Date;
   archivedBy?: string;
   createdAt: Date;
@@ -26,6 +27,7 @@ const GalleryImageSchema = new Schema<IGalleryImage>({
   mediaUseCount: { type: Number, default: 0, min: 0 },
   mediaQuality: { type: MediaQualitySchema },
   mediaFingerprint: { type: String, trim: true },
+  sortOrder: { type: Number, index: true },
   archivedAt: { type: Date, index: true },
   archivedBy: { type: String, trim: true },
   createdAt: { type: Date, default: Date.now },

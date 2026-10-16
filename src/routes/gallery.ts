@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import GalleryImage from '../models/GalleryImage';
+import GallerySetting, { GALLERY_ORDERS, GalleryOrder } from '../models/GallerySetting';
 import { AuthRequest, protect } from '../middleware/auth';
 import { archiveScopeFilter, readContentScope, recordContentArchiveEvent, validContentId } from '../lib/contentArchive';
 
@@ -13,6 +14,19 @@ function parseBulkIds(value: unknown) {
   return ids.length === value.length ? ids : null;
 }
 
+async function readGalleryOrder(): Promise<GalleryOrder> {
+  const setting = await GallerySetting.findOne({ key: 'gallery' }).lean();
+  return setting?.order ?? 'newest';
+}
+
+// Newest/oldest follow upload date. Manual follows the order the admin arranged; photos added since the
+// last arrangement have no position yet and are listed first (newest first) until the next rearrange.
+function gallerySort(order: GalleryOrder): Record<string, 1 | -1> {
+  if (order === 'oldest') return { createdAt: 1 };
+  if (order === 'manual') return { sortOrder: 1, createdAt: -1 };
+  return { createdAt: -1 };
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -23,7 +37,8 @@ function galleryAuditDetails(image: { imageUrl: string; caption?: string; catego
 
 router.get('/', async (_req: Request, res: Response) => {
   try {
-    const images = await GalleryImage.find({ archivedAt: { $exists: false } }).sort({ createdAt: -1 });
+    const order = await readGalleryOrder();
+    const images = await GalleryImage.find({ archivedAt: { $exists: false } }).sort(gallerySort(order));
     res.json({ images });
   } catch (error) {
     console.error(error);
@@ -44,14 +59,35 @@ router.get('/admin', protect, async (req: AuthRequest, res: Response) => {
       const expression = new RegExp(escapeRegExp(search), 'i');
       filter.$or = [{ caption: expression }, { category: expression }];
     }
+    const order = await readGalleryOrder();
     const [images, categories] = await Promise.all([
-      GalleryImage.find(filter).sort({ createdAt: -1 }),
-      GalleryImage.distinct('category', scopeFilter),
+    GalleryImage.find(filter).sort(scope === 'active' ? gallerySort(order) : { createdAt: -1 }),
+    GalleryImage.distinct('category', scopeFilter),
     ]);
-    res.json({ images, scope, categories: categories.filter((value): value is string => Boolean(value)).sort((a, b) => a.localeCompare(b)) });
+    res.json({ images, scope, order, categories: categories.filter((value): value is string => Boolean(value)).sort((a, b) => a.localeCompare(b)) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong fetching the gallery catalog.' });
+  }
+});
+router.get('/settings', protect, async (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ order: await readGalleryOrder() });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong loading gallery settings.' });
+  }
+});
+
+router.put('/settings', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = req.body?.order;
+    if (!GALLERY_ORDERS.includes(order)) return res.status(400).json({ error: 'Choose newest first, oldest first, or custom order.' });
+    await GallerySetting.findOneAndUpdate({ key: 'gallery' }, { $set: { order } }, { upsert: true, setDefaultsOnInsert: true });
+    res.json({ message: 'Gallery order updated', order });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong updating the gallery order.' });
   }
 });
 
@@ -107,6 +143,23 @@ router.post('/batch', protect, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong adding these photos.' });
+  }
+});
+const MAX_REORDER_IMAGES = 1000;
+
+// Saves a hand-arranged order for the public gallery and switches the gallery to "custom order".
+router.post('/reorder', protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const raw: unknown = req.body?.ids;
+    if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_REORDER_IMAGES) return res.status(400).json({ error: 'Send the photos in the order you want them.' });
+    const ids = [...new Set(raw.filter((item): item is string => typeof item === 'string' && mongoose.isValidObjectId(item)))];
+    if (ids.length !== raw.length) return res.status(400).json({ error: 'The photo list contains invalid or duplicate entries.' });
+    await GalleryImage.bulkWrite(ids.map((id, index) => ({ updateOne: { filter: { _id: id, archivedAt: { $exists: false } }, update: { $set: { sortOrder: index } } } })));
+    await GallerySetting.findOneAndUpdate({ key: 'gallery' }, { $set: { order: 'manual' } }, { upsert: true, setDefaultsOnInsert: true });
+    res.json({ message: 'Gallery order saved', count: ids.length, order: 'manual' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong saving the gallery order.' });
   }
 });
 
